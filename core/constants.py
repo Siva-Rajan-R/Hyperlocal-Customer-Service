@@ -1,0 +1,2 @@
+ENV_PREFIX="CUSTOMER_"
+SERVICE_NAME="customers"
