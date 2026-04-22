@@ -1,14 +1,14 @@
 from pydantic import BaseModel
 from typing import Optional
 
+CUSTOMER_CREATE_MANDATORY_FIELDS={'shop_id':str}
+
 class CreateCustomerSchema(BaseModel):
-    shop_id:str
     datas:dict
 
 
+CUSTOMER_UPDATE_MANDATORY_FIELDS={'id':str,'shop_id':str}
 class UpdateCustomerSchema(BaseModel):
-    id:str
-    shop_id:str
     datas:dict
 
 # name:Optional[str]=None

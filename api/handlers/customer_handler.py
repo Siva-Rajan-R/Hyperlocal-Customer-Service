@@ -1,4 +1,4 @@
-from schemas.v1.request_schema.customer_schema import CreateCustomerSchema,UpdateCustomerSchema
+from schemas.v1.request_schema.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,CUSTOMER_CREATE_MANDATORY_FIELDS,CUSTOMER_UPDATE_MANDATORY_FIELDS
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
@@ -7,7 +7,7 @@ from fastapi.exceptions import HTTPException
 from core.decorators.error_handler_dec import catch_errors
 from infras.primary_db.services.customer_service import CustomerService
 from sqlalchemy.ext.asyncio import AsyncSession
-from core.utils.validate_fields import validate_fields
+from core.utils.validate_fields import validate_fields,validate_internal_fields
 from typing import Optional,List
 
 class HandleCustomerRequest(BaseServiceModel):
@@ -17,7 +17,7 @@ class HandleCustomerRequest(BaseServiceModel):
 
     async def create(self,data:CreateCustomerSchema):
         # await validate_fields(service_name="CUSTOMER",shop_id="",incoming_fields=data.datas)
-
+        await validate_internal_fields(fields_tocheck=CUSTOMER_CREATE_MANDATORY_FIELDS,incoming_fields=data.datas)
         res=await CustomerService(session=self.session).create(data=data)
         if not res:
             raise HTTPException(
@@ -41,6 +41,7 @@ class HandleCustomerRequest(BaseServiceModel):
 
     async def update(self,data:UpdateCustomerSchema):
         # await validate_fields(service_name="CUSTOMER",shop_id="",incoming_fields=data.datas)
+        await validate_internal_fields(fields_tocheck=CUSTOMER_UPDATE_MANDATORY_FIELDS,incoming_fields=data.datas)
         res=await CustomerService(session=self.session).update(data=data)
         if not res:
             raise HTTPException(

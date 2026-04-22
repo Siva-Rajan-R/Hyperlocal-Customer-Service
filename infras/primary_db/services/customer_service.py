@@ -20,8 +20,9 @@ class CustomerService(BaseServiceModel):
         
         customer_id:str=generate_uuid()
         data=CreateCustomerDbSchema(
-            **data.model_dump(mode='json'),
-            id=customer_id
+            datas=data.datas,
+            id=customer_id,
+            shop_id=data.datas['shop_id']
         )
 
         res=await self.customer_repo_obj.create(data=data)
@@ -41,7 +42,11 @@ class CustomerService(BaseServiceModel):
         return await self.customer_repo_obj.create_bulk(datas=datas_toadd)
 
     async def update(self,data:UpdateCustomerSchema):
-        data=UpdateCustomerDbSchema(**data.model_dump(mode='json',exclude_none=True,exclude_unset=True))
+        data=UpdateCustomerDbSchema(
+            datas=data.datas,
+            id=data.datas['id'],
+            shop_id=data.datas['shop_id']
+        )
         res=await self.customer_repo_obj.update(data=data)
         if not res:
             return False

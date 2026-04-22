@@ -4,6 +4,34 @@ from integrations.field_service import get_fields
 from icecream import ic
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 
+async def validate_internal_fields(fields_tocheck:dict,incoming_fields:dict):
+    combined_fields={**fields_tocheck,**incoming_fields}
+    if len(combined_fields)!=len(incoming_fields):
+        raise HTTPException(
+                status_code=422,
+                detail=ErrorResponseTypDict(
+                    msg="Error : Creating Shop",
+                    description=f"Invalid Fields, Please enter valid fields {fields_tocheck}",
+                    success=False,
+                    status_code=422
+                )
+            )
+
+
+    for key,value in fields_tocheck.items():
+        if type(incoming_fields[key])!=value:
+            raise HTTPException(
+                status_code=422,
+                detail=ErrorResponseTypDict(
+                    msg="Error : Creating Shop",
+                    description=f"Invalid data type for field {key}, should be {value}",
+                    success=False,
+                    status_code=422
+                )
+            )
+    
+
+    return True
 
 
 

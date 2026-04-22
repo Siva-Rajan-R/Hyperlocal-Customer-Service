@@ -14,6 +14,7 @@ async def init_pg_db():
     try:
         ic("initializing pg db...")
         async with ENGINE.connect() as conn:
+            # await conn.run_sync(BASE.metadata.drop_all)
             await conn.run_sync(BASE.metadata.create_all)
             await conn.commit()
         ic("...Databse initialized successfully...")
@@ -26,4 +27,4 @@ async def get_pg_async_session():
     try:
         yield Session
     finally:
-        await Session.close_all()
+        await Session.close()

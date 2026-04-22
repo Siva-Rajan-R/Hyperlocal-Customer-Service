@@ -8,6 +8,6 @@ class Customers(BASE):
     __tablename__ = "customers"
     id = Column(String, primary_key=True)
     sequence_id=Column(BigInteger,Identity(always=True),nullable=False)
-    shop_id=Column(String, nullable=False,unique=True)
+    shop_id=Column(String, nullable=False)
     datas=Column(JSONB,nullable=False)
     created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
