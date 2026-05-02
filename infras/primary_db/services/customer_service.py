@@ -1,6 +1,7 @@
 from ..main import AsyncSession
-from ..repos.customer_repo import CustomerRepo,Optional,CreateCustomerDbSchema,UpdateCustomerDbSchema
-from schemas.v1.request_schema.customer_schema import CreateCustomerSchema,UpdateCustomerSchema
+from ..repos.customer_repo import CustomerRepo
+from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 from fastapi.exceptions import HTTPException
@@ -16,21 +17,58 @@ class CustomerService(BaseServiceModel):
         super().__init__(session)
         self.customer_repo_obj=CustomerRepo(session=session)
 
-    async def create(self,data:CreateCustomerSchema):
+    async def create(self,data:CreateCustomerSchema) -> dict | None:
         
         customer_id:str=generate_uuid()
-        data=CreateCustomerDbSchema(
-            datas=data.datas,
+        data_toadd=CreateCustomerDbSchema(
+            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True),
             id=customer_id,
-            shop_id=data.datas['shop_id']
         )
 
-        res=await self.customer_repo_obj.create(data=data)
-        if not res:
-            return False
-        
-        return data
+        res=await self.customer_repo_obj.create(data=data_toadd)
+        return res
     
+
+    async def update(self,data:UpdateCustomerSchema) -> dict | None:
+        data_toupdate=UpdateCustomerDbSchema(
+            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True)
+        )
+        res=await self.customer_repo_obj.update(data=data_toupdate)
+        return res
+
+
+    async def delete(self,data:DeleteCustomerSchema) -> dict | None:
+        res=await self.customer_repo_obj.delete(data=data)
+        return res
+
+
+    async def get(self,data:GetAllCustomerSchema) -> List[dict] | list:
+        res=await self.customer_repo_obj.get(data=data)
+        return res
+
+
+    async def getby_id(self,data:GetCustomerByIdSchema) -> dict | None:
+        res=await self.customer_repo_obj.getby_id(data=data)
+        return res
+    
+    async def getby_shop_id(self,data:GetCustomerByShopIdSchema) -> List[dict] | list:
+        res=await self.customer_repo_obj.getby_shop_id(data=data)
+        return res
+    
+    async def verify(self,data:VerifyCustomerSchema) -> dict:
+        res=await self.customer_repo_obj.verify(data=data)
+        return res
+    
+
+
+
+
+    async def search(self, query:str, limit:Optional[int]=5):
+        res=await self.customer_repo_obj.search(query=query,limit=limit)
+        return res
+    
+    async def check_bulk(self,datas:list):
+        return await self.customer_repo_obj.check_bulk(data=datas)
 
     async def create_bulk(self,datas:List[CreateCustomerSchema]):
         datas_toadd=[]
@@ -40,41 +78,3 @@ class CustomerService(BaseServiceModel):
             )
 
         return await self.customer_repo_obj.create_bulk(datas=datas_toadd)
-
-    async def update(self,data:UpdateCustomerSchema):
-        data=UpdateCustomerDbSchema(
-            datas=data.datas,
-            id=data.datas['id'],
-            shop_id=data.datas['shop_id']
-        )
-        res=await self.customer_repo_obj.update(data=data)
-        if not res:
-            return False
-        
-        return True
-
-
-    async def delete(self,customer_id:str,shop_id:str):
-        res=await self.customer_repo_obj.delete(customer_id=customer_id,shop_id=shop_id)
-        if not res:
-            return False
-        
-        return True
-
-    async def check_bulk(self,datas:list):
-        return await self.customer_repo_obj.check_bulk(data=datas)
-
-    async def get(self,timezone:TimeZoneEnum,query:Optional[str]="",limit:Optional[int]=10,offset:int=1):
-        offset=offset-1
-        res=await self.customer_repo_obj.get(query=query,limit=limit,offset=offset,timezone=timezone)
-        return res
-
-
-    async def getby_id(self,timezone:TimeZoneEnum,customer_id:str,shop_id:str):
-        res=await self.customer_repo_obj.getby_id(timezone=timezone,customer_id=customer_id,shop_id=shop_id)
-        return res
-    
-
-    async def search(self, query:str, limit:Optional[int]=5):
-        res=await self.customer_repo_obj.search(query=query,limit=limit)
-        return res

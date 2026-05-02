@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import os,asyncio
 from core.configs.settings_config import SETTINGS
 from hyperlocal_platform.core.enums.environment_enum import EnvironmentEnum
+from messaging.worker import worker
 load_dotenv()
 
 
@@ -15,7 +16,7 @@ async def customer_service_lifespan(app:FastAPI):
     try:
         ic("Starting customer service...")
         await init_pg_db()
-        # asyncio.create_task(worker())
+        asyncio.create_task(worker())
         yield
 
     except Exception as e:

@@ -1,4 +1,5 @@
-from schemas.v1.request_schema.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,CUSTOMER_CREATE_MANDATORY_FIELDS,CUSTOMER_UPDATE_MANDATORY_FIELDS
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema
+from schemas.v1.response_schemas.user_schemas.customer_schema import CustomerCreateResponseSchema,CustomerDeleteResponseSchema,CustomerGetResponseSchema,CustomerUpdateResponseSchema
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
@@ -16,15 +17,13 @@ class HandleCustomerRequest(BaseServiceModel):
 
 
     async def create(self,data:CreateCustomerSchema):
-        # await validate_fields(service_name="CUSTOMER",shop_id="",incoming_fields=data.datas)
-        await validate_internal_fields(fields_tocheck=CUSTOMER_CREATE_MANDATORY_FIELDS,incoming_fields=data.datas)
         res=await CustomerService(session=self.session).create(data=data)
         if not res:
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponseTypDict(
                     msg="Error : Creating customer",
-                    description="Invalid datas for creating customers",
+                    description="Invalid datas for creating customers or Customer already exists",
                     status_code=400,
                     success=False
                 )
@@ -35,13 +34,12 @@ class HandleCustomerRequest(BaseServiceModel):
                 msg="Customer created successfully",
                 status_code=201,
                 success=True
-            )
+            ),
+            data=CustomerCreateResponseSchema(**res) if res else None
         )
 
 
     async def update(self,data:UpdateCustomerSchema):
-        # await validate_fields(service_name="CUSTOMER",shop_id="",incoming_fields=data.datas)
-        await validate_internal_fields(fields_tocheck=CUSTOMER_UPDATE_MANDATORY_FIELDS,incoming_fields=data.datas)
         res=await CustomerService(session=self.session).update(data=data)
         if not res:
             raise HTTPException(
@@ -59,12 +57,13 @@ class HandleCustomerRequest(BaseServiceModel):
                 msg="Customer updated successfully",
                 status_code=200,
                 success=True
-            )
+            ),
+            data=CustomerUpdateResponseSchema(**res) if res else None
         )
 
 
-    async def delete(self,customer_id:str,shop_id:str):
-        res=await CustomerService(session=self.session).delete(customer_id=customer_id,shop_id=shop_id)
+    async def delete(self,data:DeleteCustomerSchema):
+        res=await CustomerService(session=self.session).delete(data=data)
         if not res:
             raise HTTPException(
                 status_code=400,
@@ -81,33 +80,46 @@ class HandleCustomerRequest(BaseServiceModel):
                 msg="Customer deleted successfully",
                 status_code=200,
                 success=True
-            )
+            ),
+            data=CustomerDeleteResponseSchema(**res) if res else None
         )
 
 
-    async def get(self,timezone:TimeZoneEnum,query:Optional[str]="",limit:Optional[int]=10,offset:int=1):
-        res=await CustomerService(session=self.session).get(query=query,limit=limit,offset=offset,timezone=timezone)
+    async def get(self,data:GetAllCustomerSchema):
+        res=await CustomerService(session=self.session).get(data=data)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Customer fetched successfully",
                 status_code=200,
                 success=True
             ),
-            data=res
+            data=[CustomerGetResponseSchema(**r) for r in res] if res else None
         )
 
 
-    async def getby_id(self,timezone:TimeZoneEnum,shop_id:str,customer_id:str):
-        res=await CustomerService(session=self.session).getby_id(timezone=timezone,shop_id=shop_id,customer_id=customer_id)
+    async def getby_id(self,data:GetCustomerByIdSchema):
+        res=await CustomerService(session=self.session).getby_id(data=data)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Customer fetched successfully",
                 status_code=200,
                 success=True
             ),
-            data=res
+            data=CustomerGetResponseSchema(**res) if res else None
         )
     
+
+    async def getby_shop_id(self,data:GetCustomerByShopIdSchema):
+        res=await CustomerService(session=self.session).getby_shop_id(data=data)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer fetched successfully",
+                status_code=200,
+                success=True
+            ),
+            data=[CustomerGetResponseSchema(**r) for r in res] if res else None
+        )
+
 
     async def search(self, query:str, limit:Optional[int]=5):
         res=await CustomerService(session=self.session).search(query=query,limit=limit)
