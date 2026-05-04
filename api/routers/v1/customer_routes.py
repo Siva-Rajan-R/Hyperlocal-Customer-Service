@@ -24,14 +24,14 @@ async def create(data:CreateCustomerSchema,session:PG_ASYNC_SESSION):
 async def update(data:UpdateCustomerSchema,session:PG_ASYNC_SESSION):
     return await HandleCustomerRequest(session=session).update(data=data)
 
-@router.delete('/{customer_id}')
+@router.delete('/{shop_id}/{id}')
 async def delete(session:PG_ASYNC_SESSION,data:DeleteCustomerSchema=Depends()):
     return await HandleCustomerRequest(session=session).delete(data=data)
 
 
 # Read methods
 
-@router.get('/by/{customer_id}')
+@router.get('/by/{shop_id}/{id}')
 async def getby_id(session:PG_ASYNC_SESSION,data:GetCustomerByIdSchema=Depends()):
     return await HandleCustomerRequest(session=session).getby_id(data=data)
 

@@ -57,7 +57,7 @@ class GetCustomerByShopIdSchema(BaseModel):
 
 
 class GetCustomerByIdSchema(BaseModel):
-    timezone:TimeZoneEnum
+    timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
     id:str
     shop_id:str
 
