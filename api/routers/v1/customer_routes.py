@@ -6,6 +6,7 @@ from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from core.utils.validate_fields import validate_fields
 from ...handlers.customer_handler import HandleCustomerRequest
 print(TimeZoneEnum)
+from icecream import ic
 
 router=APIRouter(
     tags=['Customer CRUD'],
@@ -30,6 +31,10 @@ async def delete(session:PG_ASYNC_SESSION,data:DeleteCustomerSchema=Depends()):
 
 
 # Read methods
+@router.get('/by/shop/{shop_id}')
+async def getby_shop(session:PG_ASYNC_SESSION,data:GetCustomerByShopIdSchema=Depends()):
+    ic(data)
+    return await HandleCustomerRequest(session=session).getby_shop_id(data=data)
 
 @router.get('/by/{shop_id}/{id}')
 async def getby_id(session:PG_ASYNC_SESSION,data:GetCustomerByIdSchema=Depends()):
@@ -39,8 +44,5 @@ async def getby_id(session:PG_ASYNC_SESSION,data:GetCustomerByIdSchema=Depends()
 async def get(session:PG_ASYNC_SESSION,data:GetAllCustomerSchema=Depends()):
     return await HandleCustomerRequest(session=session).get(data=data)
 
-@router.get('/by/shop/{shop_id}')
-async def getby_shop(session:PG_ASYNC_SESSION,data:GetCustomerByShopIdSchema=Depends()):
-    return await HandleCustomerRequest(session=session).getby_shop_id(data=data)
 
 

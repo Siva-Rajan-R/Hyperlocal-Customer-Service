@@ -10,6 +10,7 @@ from infras.primary_db.services.customer_service import CustomerService
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.utils.validate_fields import validate_fields,validate_internal_fields
 from typing import Optional,List
+from icecream import ic
 
 class HandleCustomerRequest(BaseServiceModel):
     def __init__(self, session:AsyncSession):
@@ -110,7 +111,9 @@ class HandleCustomerRequest(BaseServiceModel):
     
 
     async def getby_shop_id(self,data:GetCustomerByShopIdSchema):
+        ic(data)
         res=await CustomerService(session=self.session).getby_shop_id(data=data)
+        ic(res)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Customer fetched successfully",

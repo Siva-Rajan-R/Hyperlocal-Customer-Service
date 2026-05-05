@@ -10,6 +10,7 @@ from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from core.decorators.error_handler_dec import catch_errors
 from typing import Optional,List
+from icecream import ic
 
 
 
@@ -105,6 +106,7 @@ class CustomerRepo(BaseRepoModel):
 
 
     async def getby_shop_id(self,data:GetCustomerByShopIdSchema) -> List[dict] | list:
+        ic(data)
         search_term=f"%{data.query}%"
         created_at=func.date(func.timezone(data.timezone.value,Customers.created_at))
         cursor=(data.offset-1)*data.limit
@@ -125,7 +127,7 @@ class CustomerRepo(BaseRepoModel):
         )
 
         customers=(await self.session.execute(customer_stmt)).mappings().all()
-
+        ic(customers)
         return customers
     
 
