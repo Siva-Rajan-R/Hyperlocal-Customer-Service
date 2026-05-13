@@ -1,7 +1,7 @@
 from ..main import AsyncSession
 from ..repos.customer_repo import CustomerRepo
 from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,GetCustomerCreditHistories
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 from fastapi.exceptions import HTTPException
@@ -41,10 +41,10 @@ class CustomerService(BaseServiceModel):
             **data.model_dump(mode='json',exclude_none=True,exclude_unset=True)
         )
         customer_res=await self.customer_repo_obj.update(data=data_toupdate)
+        ic(customer_res)
         if customer_res and data.credit_limit and data.credit_limit!=previous_credit['credit_limit'] and previous_credit['is_active']==True:
             customer_credit_res=await self.customer_repo_obj.create_credit_history(
                 data=CreditHistoryCustomerDbSchema(
-                    id=generate_uuid(),
                     shop_id=data.shop_id,
                     customer_id=data.id,
                     credit_before=previous_credit['credit_limit'],
@@ -93,6 +93,9 @@ class CustomerService(BaseServiceModel):
         res=await self.customer_repo_obj.get(data=data)
         return res
 
+    async def get_customer_credit_histories(self,data:GetCustomerCreditHistories):
+        res=await self.customer_repo_obj.get_customer_credit_histories(data=data)
+        return res
 
     async def getby_id(self,data:GetCustomerByIdSchema) -> dict | None:
         res=await self.customer_repo_obj.getby_id(data=data)

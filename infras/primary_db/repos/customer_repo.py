@@ -4,7 +4,7 @@ from ..main import AsyncSession
 from sqlalchemy import select,update,delete,or_,and_,func
 from sqlalchemy.dialects.postgresql import insert
 from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema
-from schemas.v1.request_schemas.customer_schema import DeleteCustomerSchema,UpdateCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema
+from schemas.v1.request_schemas.customer_schema import DeleteCustomerSchema,UpdateCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,GetCustomerCreditHistories
 from typing import Optional
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -94,7 +94,6 @@ class CustomerRepo(BaseRepoModel):
             and_(
                 Customers.id==data.id,
                 Customers.shop_id==data.shop_id,
-                Customers.credit_limit >= data.amount,
                 Customers.is_active==True
             )
         ).values(
@@ -137,7 +136,28 @@ class CustomerRepo(BaseRepoModel):
         customers=(await self.session.execute(customer_stmt)).mappings().all()
 
         return customers
+    
 
+    async def get_customer_credit_histories(self,data:GetCustomerCreditHistories)-> List[dict] | list:
+        ic(data)
+        customer_hist_stmt=(
+            select(
+                CustomerCreditHistories.id,
+                CustomerCreditHistories.customer_id,
+                CustomerCreditHistories.created_at,
+                CustomerCreditHistories.type,
+                CustomerCreditHistories.credit_after,
+                CustomerCreditHistories.credit_before
+            )
+            .where(
+                CustomerCreditHistories.customer_id==data.customer_id,
+                CustomerCreditHistories.shop_id==data.shop_id
+            )
+        )
+
+        res=(await self.session.execute(customer_hist_stmt)).mappings().all()
+
+        return res
 
     async def getby_shop_id(self,data:GetCustomerByShopIdSchema) -> List[dict] | list:
         ic(data)

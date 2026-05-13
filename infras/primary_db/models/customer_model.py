@@ -22,7 +22,7 @@ class Customers(BASE):
 
 class CustomerCreditHistories(BASE):
     __tablename__="customer_credit_histories"
-    id=Column(String,primary_key=True,autoincrement=True)
+    id=Column(BigInteger,primary_key=True,autoincrement=True)
     shop_id=Column(String,nullable=False)
     customer_id=Column(String,nullable=False)
     credit_before=Column(Float,nullable=False)

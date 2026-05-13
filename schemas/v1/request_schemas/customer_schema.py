@@ -80,6 +80,10 @@ class CreditHistoryCustomerSchema(BaseModel):
     credit_after:float
     type:CustomerCreditHistoryEnums
 
+class GetCustomerCreditHistories(BaseModel):
+    customer_id:str
+    shop_id:str
+
 # name:Optional[str]=None
 # description:Optional[str]=None
 # category:Optional[ProductCategoryEnum]=None

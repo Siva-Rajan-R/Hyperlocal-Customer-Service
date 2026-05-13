@@ -1,4 +1,4 @@
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerCreditHistories
 from schemas.v1.response_schemas.user_schemas.customer_schema import CustomerCreateResponseSchema,CustomerDeleteResponseSchema,CustomerGetResponseSchema,CustomerUpdateResponseSchema
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -117,7 +117,18 @@ class HandleCustomerRequest(BaseServiceModel):
             ),
             data=[CustomerGetResponseSchema(**r) for r in res] if res else None
         )
+    
+    async def get_customer_credit_histories(self,data:GetCustomerCreditHistories):
+        res=await CustomerService(session=self.session).get_customer_credit_histories(data=data)
 
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer Credit Histories fetched successfully",
+                status_code=200,
+                success=True
+            ),
+            data=res
+        )
 
     async def getby_id(self,data:GetCustomerByIdSchema):
         res=await CustomerService(session=self.session).getby_id(data=data)

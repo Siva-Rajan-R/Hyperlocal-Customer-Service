@@ -1,5 +1,5 @@
 from fastapi import APIRouter,HTTPException,Query,Depends
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerCreditHistories
 from typing import Annotated,Optional
 from infras.primary_db.main import get_pg_async_session,AsyncSession
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -43,6 +43,10 @@ async def getby_id(session:PG_ASYNC_SESSION,data:GetCustomerByIdSchema=Depends()
 @router.get('')
 async def get(session:PG_ASYNC_SESSION,data:GetAllCustomerSchema=Depends()):
     return await HandleCustomerRequest(session=session).get(data=data)
+
+@router.get('/credit/histories/{shop_id}/{customer_id}')
+async def get(session:PG_ASYNC_SESSION,data:GetCustomerCreditHistories=Depends()):
+    return await HandleCustomerRequest(session=session).get_customer_credit_histories(data=data)
 
 
 

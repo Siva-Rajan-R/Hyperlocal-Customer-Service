@@ -25,7 +25,6 @@ class UpdateCustomerDbSchema(BaseModel):
     datas:Optional[dict]={}
 
 class CreditHistoryCustomerDbSchema(BaseModel):
-    id:str
     shop_id:str
     customer_id:str
     credit_before:float
