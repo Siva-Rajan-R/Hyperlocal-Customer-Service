@@ -1,6 +1,7 @@
 from pydantic import BaseModel,EmailStr,Field
 from typing import Optional
 from core.data_formats.typ_dicts.customer_typdict import CustomerAddressTypDict
+from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerPaymentCycleEnums
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 
 
@@ -71,6 +72,13 @@ class VerifyCustomerSchema(BaseModel):
     shop_id:str
     email:Optional[EmailStr]=None
     mobile_number:Optional[str]=None
+
+
+class CreditHistoryCustomerSchema(BaseModel):
+    customer_id:str
+    credit_before:float
+    credit_after:float
+    type:CustomerCreditHistoryEnums
 
 # name:Optional[str]=None
 # description:Optional[str]=None

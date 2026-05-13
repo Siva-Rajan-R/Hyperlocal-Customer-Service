@@ -19,3 +19,15 @@ class Customers(BASE):
 
     created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
     updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())
+
+class CustomerCreditHistories(BASE):
+    __tablename__="customer_credit_histories"
+    id=Column(String,primary_key=True,autoincrement=True)
+    shop_id=Column(String,nullable=False)
+    customer_id=Column(String,nullable=False)
+    credit_before=Column(Float,nullable=False)
+    credit_after=Column(Float,nullable=False)
+    type=Column(String,nullable=False)
+
+    created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
+    updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())

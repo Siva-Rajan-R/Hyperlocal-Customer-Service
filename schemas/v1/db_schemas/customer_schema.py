@@ -1,5 +1,6 @@
 from pydantic import BaseModel,EmailStr
 from typing import Optional
+from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerPaymentCycleEnums
 
 class CreateCustomerDbSchema(BaseModel):
     id:str
@@ -22,3 +23,11 @@ class UpdateCustomerDbSchema(BaseModel):
     is_active:Optional[bool]=None
     datas:Optional[dict]=None
     datas:Optional[dict]={}
+
+class CreditHistoryCustomerDbSchema(BaseModel):
+    id:str
+    shop_id:str
+    customer_id:str
+    credit_before:float
+    credit_after:float
+    type:CustomerCreditHistoryEnums

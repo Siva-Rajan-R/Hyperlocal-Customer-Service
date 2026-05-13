@@ -1,9 +1,9 @@
 from models.repo_models.base_repo_model import BaseRepoModel
-from ..models.customer_model import Customers,String
+from ..models.customer_model import Customers,String,CustomerCreditHistories
 from ..main import AsyncSession
 from sqlalchemy import select,update,delete,or_,and_,func
 from sqlalchemy.dialects.postgresql import insert
-from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema
+from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema
 from schemas.v1.request_schemas.customer_schema import DeleteCustomerSchema,UpdateCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema
 from typing import Optional
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
@@ -44,6 +44,21 @@ class CustomerRepo(BaseRepoModel):
                 **data.model_dump(mode="json")
             )
             .returning(*self.customer_cols)
+        )
+        res=(await self.session.execute(stmt)).mappings().one_or_none()
+        return res
+    
+
+    @start_db_transaction
+    async def create_credit_history(self,data:CreditHistoryCustomerDbSchema)->dict | None:
+        stmt=(
+            insert(
+                CustomerCreditHistories
+            )
+            .values(
+                **data.model_dump(mode="json")
+            )
+            .returning(CustomerCreditHistories.id)
         )
         res=(await self.session.execute(stmt)).mappings().one_or_none()
         return res

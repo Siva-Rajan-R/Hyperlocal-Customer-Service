@@ -1,6 +1,6 @@
 from ..main import AsyncSession
 from ..repos.customer_repo import CustomerRepo
-from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema
+from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema
 from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
@@ -8,6 +8,7 @@ from fastapi.exceptions import HTTPException
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
 from core.decorators.error_handler_dec import catch_errors
+from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from typing import Optional,List
 from ..models.customer_model import Customers
@@ -26,22 +27,61 @@ class CustomerService(BaseServiceModel):
             id=customer_id,
         )
 
-        res=await self.customer_repo_obj.create(data=data_toadd)
-        return res
+        customer_res=await self.customer_repo_obj.create(data=data_toadd)
+        return customer_res
     
 
     async def update(self,data:UpdateCustomerSchema) -> dict | None:
+        previous_credit=(await self.getby_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id)))
+        ic(previous_credit)
+        if not previous_credit:
+            return False
+        
         data_toupdate=UpdateCustomerDbSchema(
             **data.model_dump(mode='json',exclude_none=True,exclude_unset=True)
         )
-        res=await self.customer_repo_obj.update(data=data_toupdate)
-        return res
+        customer_res=await self.customer_repo_obj.update(data=data_toupdate)
+        if customer_res and data.credit_limit and data.credit_limit!=previous_credit['credit_limit'] and previous_credit['is_active']==True:
+            customer_credit_res=await self.customer_repo_obj.create_credit_history(
+                data=CreditHistoryCustomerDbSchema(
+                    id=generate_uuid(),
+                    shop_id=data.shop_id,
+                    customer_id=data.id,
+                    credit_before=previous_credit['credit_limit'],
+                    credit_after=customer_res['credit_limit'],
+                    type=CustomerCreditHistoryEnums.UPDATED
+                    
+                )
+            )
+
+            ic(customer_credit_res)
+
+        return customer_res
     
 
     async def deduct_credit(self,data:DeductCustomerCreditSchema):
-        res=await self.customer_repo_obj.deduct_credit(data=data)
-        ic(res)
-        return res
+        previous_credit=(await self.getby_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id)))
+        ic(previous_credit)
+        if not previous_credit:
+            return False
+        customer_res=await self.customer_repo_obj.deduct_credit(data=data)
+        ic(customer_res)
+        if customer_res and previous_credit['is_active']==True:
+            customer_credit_res=await self.customer_repo_obj.create_credit_history(
+                data=CreditHistoryCustomerDbSchema(
+                    id=generate_uuid(),
+                    shop_id=data.shop_id,
+                    customer_id=data.id,
+                    credit_before=previous_credit['credit_limit'],
+                    credit_after=customer_res['credit_limit'],
+                    type=CustomerCreditHistoryEnums.SALES
+                    
+                )
+            )
+
+            ic(customer_credit_res)
+        return customer_res
+    
 
 
     async def delete(self,data:DeleteCustomerSchema) -> dict | None:
