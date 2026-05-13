@@ -18,7 +18,7 @@ class CreateCustomerSchema(BaseModel):
     name:str
     email:EmailStr
     mobile_number:str
-    credit_limit:float
+    credit_limit:Optional[float]=0
     is_active:bool
     datas:Optional[CustomerOptionalFieldsSchema]={}
 
@@ -60,6 +60,12 @@ class GetCustomerByIdSchema(BaseModel):
     timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
     id:str
     shop_id:str
+
+class DeductCustomerCreditSchema(BaseModel):
+    id:str
+    shop_id:str
+    amount:float
+
 
 class VerifyCustomerSchema(BaseModel):
     shop_id:str

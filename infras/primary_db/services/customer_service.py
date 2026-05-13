@@ -1,7 +1,7 @@
 from ..main import AsyncSession
 from ..repos.customer_repo import CustomerRepo
 from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 from fastapi.exceptions import HTTPException
@@ -11,6 +11,7 @@ from core.decorators.error_handler_dec import catch_errors
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from typing import Optional,List
 from ..models.customer_model import Customers
+from icecream import ic
 
 class CustomerService(BaseServiceModel):
     def __init__(self, session:AsyncSession):
@@ -34,6 +35,12 @@ class CustomerService(BaseServiceModel):
             **data.model_dump(mode='json',exclude_none=True,exclude_unset=True)
         )
         res=await self.customer_repo_obj.update(data=data_toupdate)
+        return res
+    
+
+    async def deduct_credit(self,data:DeductCustomerCreditSchema):
+        res=await self.customer_repo_obj.deduct_credit(data=data)
+        ic(res)
         return res
 
 

@@ -18,6 +18,17 @@ class HandleCustomerRequest(BaseServiceModel):
 
 
     async def create(self,data:CreateCustomerSchema):
+        if data.is_active and data.credit_limit is None:
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponseTypDict(
+                    status_code=400,
+                    msg="Error Creating Customer",
+                    description="Credit limit could not be emplty when customer is active",
+                    success=False
+                )
+            )
+
         res=await CustomerService(session=self.session).create(data=data)
         if not res:
             raise HTTPException(
@@ -41,6 +52,16 @@ class HandleCustomerRequest(BaseServiceModel):
 
 
     async def update(self,data:UpdateCustomerSchema):
+        if data.is_active and data.credit_limit is None:
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponseTypDict(
+                    status_code=400,
+                    msg="Error Creating Customer",
+                    description="Credit limit could not be emplty when customer is active",
+                    success=False
+                )
+            )
         res=await CustomerService(session=self.session).update(data=data)
         if not res:
             raise HTTPException(

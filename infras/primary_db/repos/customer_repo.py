@@ -4,7 +4,7 @@ from ..main import AsyncSession
 from sqlalchemy import select,update,delete,or_,and_,func
 from sqlalchemy.dialects.postgresql import insert
 from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema
-from schemas.v1.request_schemas.customer_schema import DeleteCustomerSchema,UpdateCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema
+from schemas.v1.request_schemas.customer_schema import DeleteCustomerSchema,UpdateCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema
 from typing import Optional
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -65,6 +65,25 @@ class CustomerRepo(BaseRepoModel):
             )
         ).values(
             **data.model_dump(mode='json',exclude_none=True,exclude_unset=True,exclude=['id','shop_id'])
+        ).returning(*self.customer_cols)
+
+        is_updated=(await self.session.execute(customer_toupdate)).mappings().one_or_none()
+        return is_updated
+    
+
+    @start_db_transaction
+    async def deduct_credit(self,data:DeductCustomerCreditSchema)->dict|None:
+        customer_toupdate=update(
+            Customers
+        ).where(
+            and_(
+                Customers.id==data.id,
+                Customers.shop_id==data.shop_id,
+                Customers.credit_limit >= data.amount,
+                Customers.is_active==True
+            )
+        ).values(
+            credit_limit=Customers.credit_limit-data.amount
         ).returning(*self.customer_cols)
 
         is_updated=(await self.session.execute(customer_toupdate)).mappings().one_or_none()

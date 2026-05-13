@@ -1,7 +1,7 @@
 from infras.primary_db.services.customer_service import CustomerService
 from sqlalchemy.ext.asyncio import AsyncSession
 from infras.primary_db.main import AsyncCustomerLocalSession
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from schemas.v1.response_schemas.msgqueue_schemas.customer_schema import CustomerCreateResponseSchema,CustomerDeleteResponseSchema,CustomerGetResponseSchema,CustomerUpdateResponseSchema
 from typing import Optional,List,Union
@@ -42,6 +42,18 @@ class MessagingQueueCustomerService:
             if not res:
                 return res
             return CustomerDeleteResponseSchema(**res).model_dump(mode="json")
+        
+    async def deduct_credit_customer(self,data:Union[DeductCustomerCreditSchema,dict]):
+        async with AsyncCustomerLocalSession() as session:
+            customer_service_obj=CustomerService(session=session)
+            if isinstance(data, dict):
+                data = DeductCustomerCreditSchema(**data)
+            
+            res=await customer_service_obj.deduct_credit(data=data)
+            if not res:
+                return res
+            
+            return CustomerGetResponseSchema(**res) if res else None
 
     async def get_customers(self,data:Union[GetAllCustomerSchema,dict]):
         async with AsyncCustomerLocalSession() as session:
