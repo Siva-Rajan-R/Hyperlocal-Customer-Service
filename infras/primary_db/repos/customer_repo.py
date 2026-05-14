@@ -1,10 +1,10 @@
 from models.repo_models.base_repo_model import BaseRepoModel
-from ..models.customer_model import Customers,String,CustomerCreditHistories
+from ..models.customer_model import Customers,String,CustomerCreditHistories,CustomerOutstandingClearedHistories
 from ..main import AsyncSession
 from sqlalchemy import select,update,delete,or_,and_,func
 from sqlalchemy.dialects.postgresql import insert
-from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema
-from schemas.v1.request_schemas.customer_schema import DeleteCustomerSchema,UpdateCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,GetCustomerCreditHistories
+from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema,OutstandingClearedCustomerDbSchema
+from schemas.v1.request_schemas.customer_schema import DeleteCustomerSchema,UpdateCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,GetCustomerCreditHistories,DeductCustomerOutstandingSchema,GetCustomerOutstandingCleared
 from typing import Optional
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -27,6 +27,7 @@ class CustomerRepo(BaseRepoModel):
             Customers.mobile_number,
             Customers.is_active,
             Customers.credit_limit,
+            Customers.outstanding,
             Customers.created_at,
             Customers.updated_at,
             Customers.datas
@@ -44,6 +45,29 @@ class CustomerRepo(BaseRepoModel):
                 **data.model_dump(mode="json")
             )
             .returning(*self.customer_cols)
+        )
+        res=(await self.session.execute(stmt)).mappings().one_or_none()
+        return res
+    
+
+    @start_db_transaction
+    async def create_outstanding_cleared(self,data:OutstandingClearedCustomerDbSchema)->dict | None:
+        stmt=(
+            insert(
+                CustomerOutstandingClearedHistories
+            )
+            .values(
+                **data.model_dump(mode="json")
+            )
+            .returning(
+                CustomerOutstandingClearedHistories.id,
+                CustomerOutstandingClearedHistories.cleared_amount,
+                CustomerOutstandingClearedHistories.outstanding_after,
+                CustomerOutstandingClearedHistories.outstanding_before,
+                CustomerOutstandingClearedHistories.customer_id,
+                CustomerOutstandingClearedHistories.created_at,
+                CustomerOutstandingClearedHistories.payments
+            )
         )
         res=(await self.session.execute(stmt)).mappings().one_or_none()
         return res
@@ -103,6 +127,44 @@ class CustomerRepo(BaseRepoModel):
         is_updated=(await self.session.execute(customer_toupdate)).mappings().one_or_none()
         return is_updated
     
+
+    @start_db_transaction
+    async def deduct_outstanding(self,data:DeductCustomerOutstandingSchema)->dict|None:
+        customer_toupdate=update(
+            Customers
+        ).where(
+            and_(
+                Customers.id==data.id,
+                Customers.shop_id==data.shop_id,
+                Customers.is_active==True
+            )
+        ).values(
+            outstanding=Customers.outstanding-data.amount
+        ).returning(*self.customer_cols)
+
+        is_updated=(await self.session.execute(customer_toupdate)).mappings().one_or_none()
+        return is_updated
+    
+    @start_db_transaction
+    async def add_outstanding(self,data:DeductCustomerOutstandingSchema)->dict|None:
+        customer_toupdate=update(
+            Customers
+        ).where(
+            and_(
+                Customers.id==data.id,
+                Customers.shop_id==data.shop_id,
+                Customers.is_active==True
+            )
+        ).values(
+            outstanding=Customers.outstanding+data.amount
+        ).returning(*self.customer_cols)
+
+        
+
+        is_updated=(await self.session.execute(customer_toupdate)).mappings().one_or_none()
+        ic(is_updated)
+        return is_updated
+    
     @start_db_transaction
     async def delete(self, data:DeleteCustomerSchema)->dict|None:
         customer_todel=delete(
@@ -152,6 +214,29 @@ class CustomerRepo(BaseRepoModel):
             .where(
                 CustomerCreditHistories.customer_id==data.customer_id,
                 CustomerCreditHistories.shop_id==data.shop_id
+            )
+        )
+
+        res=(await self.session.execute(customer_hist_stmt)).mappings().all()
+
+        return res
+    
+
+    async def get_outstanding_cleared(self,data:GetCustomerOutstandingCleared):
+        ic(data)
+        customer_hist_stmt=(
+            select(
+                CustomerOutstandingClearedHistories.id,
+                CustomerOutstandingClearedHistories.customer_id,
+                CustomerOutstandingClearedHistories.created_at,
+                CustomerOutstandingClearedHistories.cleared_amount,
+                CustomerOutstandingClearedHistories.outstanding_after,
+                CustomerOutstandingClearedHistories.outstanding_before,
+                CustomerOutstandingClearedHistories.payments
+            )
+            .where(
+                CustomerOutstandingClearedHistories.customer_id==data.customer_id,
+                CustomerOutstandingClearedHistories.shop_id==data.shop_id
             )
         )
 

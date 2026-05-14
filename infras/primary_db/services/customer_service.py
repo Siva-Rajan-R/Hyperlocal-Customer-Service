@@ -1,7 +1,7 @@
 from ..main import AsyncSession
 from ..repos.customer_repo import CustomerRepo
-from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,GetCustomerCreditHistories
+from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema,OutstandingClearedCustomerDbSchema
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,GetCustomerCreditHistories,OutstandingClearedCustomerSchema,DeductCustomerOutstandingSchema,GetCustomerOutstandingCleared
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 from fastapi.exceptions import HTTPException
@@ -25,10 +25,32 @@ class CustomerService(BaseServiceModel):
         data_toadd=CreateCustomerDbSchema(
             **data.model_dump(mode='json',exclude_none=True,exclude_unset=True),
             id=customer_id,
+            outstanding=0
         )
 
         customer_res=await self.customer_repo_obj.create(data=data_toadd)
         return customer_res
+    
+
+    async def create_outstanding_cleared(self,data:OutstandingClearedCustomerSchema) -> dict | None:
+        out_ded_res=await self.customer_repo_obj.deduct_outstanding(data=DeductCustomerOutstandingSchema(id=data.customer_id,shop_id=data.shop_id,amount=data.cleared_amount))
+        ic(out_ded_res)
+        if not out_ded_res:
+            return False
+        
+        data_toadd=OutstandingClearedCustomerDbSchema(
+            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True),
+            outstanding_before=out_ded_res['outstanding']+data.cleared_amount,
+            outstanding_after=out_ded_res['outstanding']
+        )
+
+        customer_res=await self.customer_repo_obj.create_outstanding_cleared(data=data_toadd)
+        return customer_res
+    
+    async def add_outstanding(self,data:DeductCustomerOutstandingSchema) -> dict | None:
+        out_add_res=await self.customer_repo_obj.add_outstanding(data=data)
+        ic(out_add_res)
+        return out_add_res
     
 
     async def update(self,data:UpdateCustomerSchema) -> dict | None:
@@ -91,6 +113,10 @@ class CustomerService(BaseServiceModel):
 
     async def get(self,data:GetAllCustomerSchema) -> List[dict] | list:
         res=await self.customer_repo_obj.get(data=data)
+        return res
+    
+    async def get_outstanding_cleared(self,data:GetCustomerOutstandingCleared) -> List[dict] | list:
+        res=await self.customer_repo_obj.get_outstanding_cleared(data=data)
         return res
 
     async def get_customer_credit_histories(self,data:GetCustomerCreditHistories):

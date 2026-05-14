@@ -1,7 +1,7 @@
 from pydantic import BaseModel,EmailStr,Field
-from typing import Optional
+from typing import Optional,Dict
 from core.data_formats.typ_dicts.customer_typdict import CustomerAddressTypDict
-from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerPaymentCycleEnums
+from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerPaymentCycleEnums,CustomerOutstandingClearedPaymentMethods
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 
 
@@ -22,6 +22,13 @@ class CreateCustomerSchema(BaseModel):
     credit_limit:Optional[float]=0
     is_active:bool
     datas:Optional[CustomerOptionalFieldsSchema]={}
+
+
+class OutstandingClearedCustomerSchema(BaseModel):
+    shop_id:str
+    customer_id:str
+    payments:Dict[CustomerOutstandingClearedPaymentMethods,float]
+    cleared_amount:float
 
 
 class UpdateCustomerSchema(BaseModel):
@@ -67,6 +74,11 @@ class DeductCustomerCreditSchema(BaseModel):
     shop_id:str
     amount:float
 
+class DeductCustomerOutstandingSchema(BaseModel):
+    id:str
+    shop_id:str
+    amount:float
+
 
 class VerifyCustomerSchema(BaseModel):
     shop_id:str
@@ -81,6 +93,10 @@ class CreditHistoryCustomerSchema(BaseModel):
     type:CustomerCreditHistoryEnums
 
 class GetCustomerCreditHistories(BaseModel):
+    customer_id:str
+    shop_id:str
+
+class GetCustomerOutstandingCleared(BaseModel):
     customer_id:str
     shop_id:str
 

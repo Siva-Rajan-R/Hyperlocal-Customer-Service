@@ -1,6 +1,6 @@
 from pydantic import BaseModel,EmailStr
-from typing import Optional
-from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerPaymentCycleEnums
+from typing import Optional,Dict
+from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerPaymentCycleEnums,CustomerOutstandingClearedPaymentMethods
 
 class CreateCustomerDbSchema(BaseModel):
     id:str
@@ -10,6 +10,7 @@ class CreateCustomerDbSchema(BaseModel):
     mobile_number:str
     credit_limit:float
     is_active:bool
+    outstanding:float
     datas:Optional[dict]={}
 
 
@@ -30,3 +31,11 @@ class CreditHistoryCustomerDbSchema(BaseModel):
     credit_before:float
     credit_after:float
     type:CustomerCreditHistoryEnums
+
+class OutstandingClearedCustomerDbSchema(BaseModel):
+    shop_id:str
+    customer_id:str
+    payments:Dict[CustomerOutstandingClearedPaymentMethods,float]
+    cleared_amount:float
+    outstanding_after:float
+    outstanding_before:float

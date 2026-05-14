@@ -11,6 +11,7 @@ class CustomerCreateResponseSchema(BaseModel):
     email:EmailStr
     mobile_number:str
     credit_limit:float
+    outstanding:float
     is_active:bool
     datas:Optional[dict]={}
 
@@ -25,6 +26,7 @@ class CustomerUpdateResponseSchema(BaseModel):
     name:str
     email:EmailStr
     mobile_number:str
+    outstanding:float
     credit_limit:float
     is_active:bool
     datas:Optional[dict]={}
@@ -39,6 +41,7 @@ class CustomerDeleteResponseSchema(BaseModel):
     name:str
     email:EmailStr
     mobile_number:str
+    outstanding:float
     credit_limit:float
     is_active:bool
     datas:Optional[dict]={}
@@ -53,6 +56,7 @@ class CustomerGetResponseSchema(BaseModel):
     name:str
     email:EmailStr
     mobile_number:str
+    outstanding:float
     credit_limit:float
     is_active:bool
     datas:Optional[dict]={}

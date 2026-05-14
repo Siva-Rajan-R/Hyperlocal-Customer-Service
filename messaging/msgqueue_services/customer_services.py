@@ -1,7 +1,7 @@
 from infras.primary_db.services.customer_service import CustomerService
 from sqlalchemy.ext.asyncio import AsyncSession
 from infras.primary_db.main import AsyncCustomerLocalSession
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,OutstandingClearedCustomerSchema,DeductCustomerOutstandingSchema
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from schemas.v1.response_schemas.msgqueue_schemas.customer_schema import CustomerCreateResponseSchema,CustomerDeleteResponseSchema,CustomerGetResponseSchema,CustomerUpdateResponseSchema
 from typing import Optional,List,Union
@@ -54,6 +54,15 @@ class MessagingQueueCustomerService:
                 return res
             
             return CustomerGetResponseSchema(**res) if res else None
+        
+    async def add_outstanding_customer(self,data:Union[DeductCustomerOutstandingSchema,dict]):
+        async with AsyncCustomerLocalSession() as session:
+            customer_service_obj=CustomerService(session=session)
+            if isinstance(data, dict):
+                data = DeductCustomerOutstandingSchema(**data)
+            
+            res=await customer_service_obj.add_outstanding(data=data)
+            return res
 
     async def get_customers(self,data:Union[GetAllCustomerSchema,dict]):
         async with AsyncCustomerLocalSession() as session:

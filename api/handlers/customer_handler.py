@@ -1,4 +1,4 @@
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerCreditHistories
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerCreditHistories,OutstandingClearedCustomerSchema,DeductCustomerOutstandingSchema,GetCustomerOutstandingCleared
 from schemas.v1.response_schemas.user_schemas.customer_schema import CustomerCreateResponseSchema,CustomerDeleteResponseSchema,CustomerGetResponseSchema,CustomerUpdateResponseSchema
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -48,6 +48,54 @@ class HandleCustomerRequest(BaseServiceModel):
                 success=True
             ),
             data=CustomerCreateResponseSchema(**res) if res else None
+        )
+    
+
+    async def create_outstanding_cleared(self,data:OutstandingClearedCustomerSchema):
+
+        res=await CustomerService(session=self.session).create_outstanding_cleared(data=data)
+        if not res:
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponseTypDict(
+                    msg="Error : Creating Outstanting clear customer",
+                    description="Invalid datas for creating customers or Customer already exists",
+                    status_code=400,
+                    success=False
+                )
+            )
+        
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer outstanding cleared successfully",
+                status_code=201,
+                success=True
+            ),
+            data=res
+        )
+    
+
+    async def add_outstanding(self,data:DeductCustomerOutstandingSchema):
+
+        res=await CustomerService(session=self.session).add_outstanding(data=data)
+        if not res:
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponseTypDict(
+                    msg="Error : Creating Outstanting adding customer",
+                    description="Invalid datas for creating customers or Customer already exists",
+                    status_code=400,
+                    success=False
+                )
+            )
+        
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer outstanding adding successfully",
+                status_code=201,
+                success=True
+            ),
+            data=res
         )
 
 
@@ -116,6 +164,17 @@ class HandleCustomerRequest(BaseServiceModel):
                 success=True
             ),
             data=[CustomerGetResponseSchema(**r) for r in res] if res else None
+        )
+    
+    async def get_outstanding_cleared(self,data:GetCustomerOutstandingCleared):
+        res=await CustomerService(session=self.session).get_outstanding_cleared(data=data)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer fetched successfully",
+                status_code=200,
+                success=True
+            ),
+            data=res
         )
     
     async def get_customer_credit_histories(self,data:GetCustomerCreditHistories):

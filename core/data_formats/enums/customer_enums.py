@@ -9,3 +9,9 @@ class CustomerPaymentCycleEnums(str,Enum):
 class CustomerCreditHistoryEnums(str,Enum):
     SALES="SALES"
     UPDATED="UPDATED"
+
+class CustomerOutstandingClearedPaymentMethods(str,Enum):
+    UPI="UPI"
+    CASH="CASH"
+    CARD="CARD"
+    BANK="BANK"

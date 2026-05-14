@@ -1,5 +1,5 @@
 from fastapi import APIRouter,HTTPException,Query,Depends
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerCreditHistories
+from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerCreditHistories,OutstandingClearedCustomerSchema,DeductCustomerOutstandingSchema,GetCustomerOutstandingCleared
 from typing import Annotated,Optional
 from infras.primary_db.main import get_pg_async_session,AsyncSession
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -20,6 +20,19 @@ SHOP_ID="37d5519b-51a1-5854-982b-4d6524171017"
 @router.post('')
 async def create(data:CreateCustomerSchema,session:PG_ASYNC_SESSION):
     return await HandleCustomerRequest(session=session).create(data=data)
+
+@router.post('/outstanding/clear')
+async def create_outstanding_clear(data:OutstandingClearedCustomerSchema,session:PG_ASYNC_SESSION):
+    return await HandleCustomerRequest(session=session).create_outstanding_cleared(data=data)
+
+@router.get('/outstanding/clear/{shop_id}/{customer_id}')
+async def get_outstanding_clear(session:PG_ASYNC_SESSION,data:GetCustomerOutstandingCleared=Depends()):
+    return await HandleCustomerRequest(session=session).get_outstanding_cleared(data=data)
+
+
+@router.post('/outstanding/add')
+async def create_outstanding_add(data:DeductCustomerOutstandingSchema,session:PG_ASYNC_SESSION):
+    return await HandleCustomerRequest(session=session).add_outstanding(data=data)
 
 @router.put('')
 async def update(data:UpdateCustomerSchema,session:PG_ASYNC_SESSION):
