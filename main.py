@@ -8,6 +8,7 @@ import os,asyncio
 from core.configs.settings_config import SETTINGS
 from hyperlocal_platform.core.enums.environment_enum import EnvironmentEnum
 from messaging.worker import worker
+from infras.read_db.main import init_read_db,close_read_db
 load_dotenv()
 
 

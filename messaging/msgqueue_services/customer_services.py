@@ -64,6 +64,15 @@ class MessagingQueueCustomerService:
             res=await customer_service_obj.add_outstanding(data=data)
             return res
 
+    async def create_outstanding_cleared_customer(self,data:Union[OutstandingClearedCustomerSchema,dict]):
+        async with AsyncCustomerLocalSession() as session:
+            customer_service_obj=CustomerService(session=session)
+            if isinstance(data, dict):
+                data = OutstandingClearedCustomerSchema(**data)
+            
+            res=await customer_service_obj.create_outstanding_cleared(data=data)
+            return res
+
     async def get_customers(self,data:Union[GetAllCustomerSchema,dict]):
         async with AsyncCustomerLocalSession() as session:
             customer_service_obj=CustomerService(session=session)

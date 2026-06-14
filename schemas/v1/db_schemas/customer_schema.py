@@ -4,6 +4,7 @@ from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,Cu
 
 class CreateCustomerDbSchema(BaseModel):
     id:str
+    ui_id:str
     shop_id:str
     name:str
     email:EmailStr
@@ -22,7 +23,6 @@ class UpdateCustomerDbSchema(BaseModel):
     mobile_number:Optional[str]=None
     credit_limit:Optional[float]=None
     is_active:Optional[bool]=None
-    datas:Optional[dict]=None
     datas:Optional[dict]={}
 
 class CreditHistoryCustomerDbSchema(BaseModel):

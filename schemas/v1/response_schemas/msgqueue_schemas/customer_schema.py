@@ -1,4 +1,4 @@
-from typing import Optional,List
+from typing import Optional,List,Union
 from pydantic import BaseModel,EmailStr
 from datetime import date,datetime
 
@@ -6,7 +6,7 @@ from datetime import date,datetime
 class CustomerCreateResponseSchema(BaseModel):
     id:str
     shop_id:str
-    ui_id:int
+    ui_id:Union[str, int]
     name:str
     email:EmailStr
     mobile_number:str
@@ -22,7 +22,7 @@ class CustomerCreateResponseSchema(BaseModel):
 class CustomerUpdateResponseSchema(BaseModel):
     id:str
     shop_id:str
-    ui_id:int
+    ui_id:Union[str, int]
     name:str
     email:EmailStr
     mobile_number:str
@@ -37,7 +37,7 @@ class CustomerUpdateResponseSchema(BaseModel):
 class CustomerDeleteResponseSchema(BaseModel):
     id:str
     shop_id:str
-    ui_id:int
+    ui_id:Union[str, int]
     name:str
     email:EmailStr
     mobile_number:str
@@ -52,7 +52,7 @@ class CustomerDeleteResponseSchema(BaseModel):
 class CustomerGetResponseSchema(BaseModel):
     id:str
     shop_id:str
-    ui_id:int
+    ui_id:Union[str, int]
     name:str
     email:EmailStr
     mobile_number:str

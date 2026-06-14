@@ -1,8 +1,9 @@
 from models.repo_models.base_repo_model import BaseRepoModel
 from ..models.customer_model import Customers,String,CustomerCreditHistories,CustomerOutstandingClearedHistories
 from ..main import AsyncSession
-from sqlalchemy import select,update,delete,or_,and_,func
+from sqlalchemy import select,update,delete,or_,and_,func,case,text
 from sqlalchemy.dialects.postgresql import insert
+from datetime import datetime, timezone
 from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema,OutstandingClearedCustomerDbSchema
 from schemas.v1.request_schemas.customer_schema import DeleteCustomerSchema,UpdateCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,GetCustomerCreditHistories,DeductCustomerOutstandingSchema,GetCustomerOutstandingCleared
 from typing import Optional
@@ -34,6 +35,13 @@ class CustomerRepo(BaseRepoModel):
         )
 
 
+
+    @start_db_transaction
+    async def get_next_sequence(self, shop_id: str, start_from: int) -> int:
+        seq_name = f"seq_customer_{shop_id.replace('-', '_').lower()}"
+        await self.session.execute(text(f"CREATE SEQUENCE IF NOT EXISTS {seq_name} START WITH {start_from}"))
+        res = await self.session.execute(text(f"SELECT nextval('{seq_name}')"))
+        return res.scalar_one()
 
     @start_db_transaction
     async def create(self,data:CreateCustomerDbSchema)->dict | None:
@@ -180,18 +188,32 @@ class CustomerRepo(BaseRepoModel):
         search_term=f"%{data.query}%"
         created_at=func.date(func.timezone(data.timezone.value,Customers.created_at))
         cursor=(data.offset-1)*data.limit
+        conds = []
+        if data.query:
+            conds.append(
+                or_(
+                    Customers.id.ilike(search_term),
+                    Customers.ui_id.ilike(search_term),
+                    Customers.shop_id.ilike(search_term),
+                    func.cast(created_at,String).ilike(search_term)
+                )
+            )
+        if hasattr(data, 'from_date') and data.from_date:
+            from_dt = datetime.strptime(data.from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            conds.append(Customers.created_at >= from_dt)
+        if hasattr(data, 'to_date') and data.to_date:
+            to_date_str = data.to_date
+            if len(to_date_str) <= 10:
+                to_date_str += ' 23:59:59'
+            to_dt = datetime.strptime(to_date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            conds.append(Customers.created_at <= to_dt)
         customer_stmt=(
             select(
                 *self.customer_cols,
                 created_at
             )
-            .where(
-                or_(
-                    Customers.id.ilike(search_term),
-                    Customers.shop_id.ilike(search_term),
-                    func.cast(created_at,String).ilike(search_term)
-                )
-            ).offset(offset=cursor).limit(limit=data.limit)
+            .where(*conds)
+            .offset(offset=cursor).limit(limit=data.limit)
             .order_by(created_at)
         )
 
@@ -249,19 +271,32 @@ class CustomerRepo(BaseRepoModel):
         search_term=f"%{data.query}%"
         created_at=func.date(func.timezone(data.timezone.value,Customers.created_at))
         cursor=(data.offset-1)*data.limit
+        conds = [Customers.shop_id==data.shop_id]
+        if data.query:
+            conds.append(
+                or_(
+                    Customers.id.ilike(search_term),
+                    Customers.ui_id.ilike(search_term),
+                    Customers.shop_id.ilike(search_term),
+                    func.cast(created_at,String).ilike(search_term)
+                )
+            )
+        if hasattr(data, 'from_date') and data.from_date:
+            from_dt = datetime.strptime(data.from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            conds.append(Customers.created_at >= from_dt)
+        if hasattr(data, 'to_date') and data.to_date:
+            to_date_str = data.to_date
+            if len(to_date_str) <= 10:
+                to_date_str += ' 23:59:59'
+            to_dt = datetime.strptime(to_date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            conds.append(Customers.created_at <= to_dt)
         customer_stmt=(
             select(
                 *self.customer_cols,
                 created_at
             )
-            .where(
-                Customers.shop_id==data.shop_id,
-                or_(
-                    Customers.id.ilike(search_term),
-                    Customers.shop_id.ilike(search_term),
-                    func.cast(created_at,String).ilike(search_term)
-                )
-            ).offset(offset=cursor).limit(limit=data.limit)
+            .where(*conds)
+            .offset(offset=cursor).limit(limit=data.limit)
             .order_by(created_at)
         )
 
@@ -332,6 +367,7 @@ class CustomerRepo(BaseRepoModel):
             .where(
                 or_(
                     Customers.id.ilike(search_term),
+                    Customers.ui_id.ilike(search_term),
                     Customers.shop_id.ilike(search_term)
                 )
             ).limit(limit=limit)
@@ -340,3 +376,51 @@ class CustomerRepo(BaseRepoModel):
         customer_stmt=(await self.session.execute(customer_stmt)).mappings().all()
 
         return customer_stmt
+
+    async def get_overall_values(self, data: GetCustomerByShopIdSchema | GetAllCustomerSchema) -> dict:
+        search_term=f"%{data.query}%" if hasattr(data, 'query') else "%%"
+        stmt = (
+            select(
+                func.count(Customers.id).label("total_customers"),
+                func.sum(case((Customers.is_active == True, 1), else_=0)).label("active_customers"),
+                func.sum(Customers.outstanding).label("outstanding_balance"),
+                func.sum(Customers.credit_limit).label("total_credit_limits")
+            )
+        )
+        if hasattr(data, 'shop_id') and data.shop_id:
+            stmt = stmt.where(Customers.shop_id == data.shop_id)
+        
+        if hasattr(data, 'query') and data.query:
+            created_at=func.date(func.timezone(data.timezone.value,Customers.created_at))
+            stmt = stmt.where(
+                or_(
+                    Customers.id.ilike(search_term),
+                    Customers.ui_id.ilike(search_term),
+                    Customers.shop_id.ilike(search_term),
+                    func.cast(created_at,String).ilike(search_term)
+                )
+            )
+        
+        if hasattr(data, 'from_date') and data.from_date:
+            from_dt = datetime.strptime(data.from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            stmt = stmt.where(Customers.created_at >= from_dt)
+        if hasattr(data, 'to_date') and data.to_date:
+            to_date_str = data.to_date
+            if len(to_date_str) <= 10:
+                to_date_str += ' 23:59:59'
+            to_dt = datetime.strptime(to_date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            stmt = stmt.where(Customers.created_at <= to_dt)
+
+        res = (await self.session.execute(stmt)).mappings().one_or_none()
+        
+        return {
+            "total_customers": res["total_customers"] or 0,
+            "active_customers": res["active_customers"] or 0,
+            "outstanding_balance": res["outstanding_balance"] or 0,
+            "total_credit_limits": res["total_credit_limits"] or 0
+        } if res else {
+            "total_customers": 0,
+            "active_customers": 0,
+            "outstanding_balance": 0,
+            "total_credit_limits": 0
+        }

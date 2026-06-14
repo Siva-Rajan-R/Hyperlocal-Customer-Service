@@ -15,3 +15,4 @@ class CustomerOutstandingClearedPaymentMethods(str,Enum):
     CASH="CASH"
     CARD="CARD"
     BANK="BANK"
+    RETURN="RETURN"

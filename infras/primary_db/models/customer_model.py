@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 class Customers(BASE):
     __tablename__ = "customers"
     id = Column(String, primary_key=True)
-    ui_id=Column(BigInteger,Identity(always=True),nullable=False)
+    ui_id=Column(String,nullable=False,index=True)
     sequence_id=Column(BigInteger,Identity(always=True),nullable=False)
     shop_id=Column(String, nullable=False)
     name=Column(String,nullable=False)

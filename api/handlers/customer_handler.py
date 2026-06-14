@@ -18,7 +18,7 @@ class HandleCustomerRequest(BaseServiceModel):
 
 
     async def create(self,data:CreateCustomerSchema):
-        if data.is_active and data.credit_limit is None:
+        if data.is_active and not data.credit_limit:
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponseTypDict(
@@ -100,7 +100,7 @@ class HandleCustomerRequest(BaseServiceModel):
 
 
     async def update(self,data:UpdateCustomerSchema):
-        if data.is_active and data.credit_limit is None:
+        if data.is_active and not data.credit_limit:
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponseTypDict(
@@ -157,13 +157,22 @@ class HandleCustomerRequest(BaseServiceModel):
 
     async def get(self,data:GetAllCustomerSchema):
         res=await CustomerService(session=self.session).get(data=data)
+        
+        if data.offset == 1:
+            data_to_send = {
+                "overall_datas": res.get("overall_datas", {}),
+                "datas": [CustomerGetResponseSchema(**r) for r in res.get("datas", [])]
+            }
+        else:
+            data_to_send = [CustomerGetResponseSchema(**r) for r in res.get("datas", [])]
+
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Customer fetched successfully",
                 status_code=200,
                 success=True
             ),
-            data=[CustomerGetResponseSchema(**r) for r in res] if res else None
+            data=data_to_send
         )
     
     async def get_outstanding_cleared(self,data:GetCustomerOutstandingCleared):
@@ -205,13 +214,22 @@ class HandleCustomerRequest(BaseServiceModel):
         ic(data)
         res=await CustomerService(session=self.session).getby_shop_id(data=data)
         ic(res)
+        
+        if data.offset == 1:
+            data_to_send = {
+                "overall_datas": res.get("overall_datas", {}),
+                "datas": [CustomerGetResponseSchema(**r) for r in res.get("datas", [])]
+            }
+        else:
+            data_to_send = [CustomerGetResponseSchema(**r) for r in res.get("datas", [])]
+
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Customer fetched successfully",
                 status_code=200,
                 success=True
             ),
-            data=[CustomerGetResponseSchema(**r) for r in res] if res else None
+            data=data_to_send
         )
 
 
