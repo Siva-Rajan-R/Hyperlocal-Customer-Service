@@ -1,5 +1,5 @@
 from fastapi import APIRouter,HTTPException,Query,Depends
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerCreditHistories,OutstandingClearedCustomerSchema,DeductCustomerOutstandingSchema,GetCustomerOutstandingCleared
+from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema
 from typing import Annotated,Optional
 from infras.primary_db.main import get_pg_async_session,AsyncSession
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -14,25 +14,13 @@ router=APIRouter(
 )
 
 PG_ASYNC_SESSION=Annotated[AsyncSession,Depends(get_pg_async_session)]
-SHOP_ID="37d5519b-51a1-5854-982b-4d6524171017"
+SHOP_ID="TEST-SHOP"
 
 # Write methods
 @router.post('')
 async def create(data:CreateCustomerSchema,session:PG_ASYNC_SESSION):
     return await HandleCustomerRequest(session=session).create(data=data)
 
-@router.post('/outstanding/clear')
-async def create_outstanding_clear(data:OutstandingClearedCustomerSchema,session:PG_ASYNC_SESSION):
-    return await HandleCustomerRequest(session=session).create_outstanding_cleared(data=data)
-
-@router.get('/outstanding/clear/{shop_id}/{customer_id}')
-async def get_outstanding_clear(session:PG_ASYNC_SESSION,data:GetCustomerOutstandingCleared=Depends()):
-    return await HandleCustomerRequest(session=session).get_outstanding_cleared(data=data)
-
-
-@router.post('/outstanding/add')
-async def create_outstanding_add(data:DeductCustomerOutstandingSchema,session:PG_ASYNC_SESSION):
-    return await HandleCustomerRequest(session=session).add_outstanding(data=data)
 
 @router.put('')
 async def update(data:UpdateCustomerSchema,session:PG_ASYNC_SESSION):
@@ -42,24 +30,44 @@ async def update(data:UpdateCustomerSchema,session:PG_ASYNC_SESSION):
 async def delete(session:PG_ASYNC_SESSION,data:DeleteCustomerSchema=Depends()):
     return await HandleCustomerRequest(session=session).delete(data=data)
 
+@router.post('/outstanding/add')
+async def add_outstanding(session:PG_ASYNC_SESSION,data:CreateCustomerOutstandingSchema):
+    return await HandleCustomerRequest(session=session).add_outstanding(data=data)
+
+@router.post('/outstanding/clear')
+async def clear_outstanding(session:PG_ASYNC_SESSION,data:CreateCustomerOutstandingClearedSchema):
+    return await HandleCustomerRequest(session=session).clear_outstanding(data=data)
+
 
 # Read methods
 @router.get('/by/shop/{shop_id}')
-async def getby_shop(session:PG_ASYNC_SESSION,data:GetCustomerByShopIdSchema=Depends()):
+async def get_cusotmerby_shop_id(session:PG_ASYNC_SESSION,data:GetCustomerByShopIdSchema=Depends()):
     ic(data)
-    return await HandleCustomerRequest(session=session).getby_shop_id(data=data)
+    return await HandleCustomerRequest(session=session).get_customer_by_shop_id(data=data)
 
-@router.get('/by/{shop_id}/{id}')
-async def getby_id(session:PG_ASYNC_SESSION,data:GetCustomerByIdSchema=Depends()):
-    return await HandleCustomerRequest(session=session).getby_id(data=data)
+@router.get('/by/id/{shop_id}/{id}')
+async def get_customer_by_id(session:PG_ASYNC_SESSION,data:GetCustomerByIdSchema=Depends()):
+    return await HandleCustomerRequest(session=session).get_customer_by_id(data=data)
 
 @router.get('')
-async def get(session:PG_ASYNC_SESSION,data:GetAllCustomerSchema=Depends()):
-    return await HandleCustomerRequest(session=session).get(data=data)
+async def get_customers(session:PG_ASYNC_SESSION,data:GetAllCustomerSchema=Depends()):
+    return await HandleCustomerRequest(session=session).get_customers(data=data)
 
-@router.get('/credit/histories/{shop_id}/{customer_id}')
-async def get(session:PG_ASYNC_SESSION,data:GetCustomerCreditHistories=Depends()):
-    return await HandleCustomerRequest(session=session).get_customer_credit_histories(data=data)
+
+@router.get('/cleared-histories/by/shop/{shop_id}')
+async def get_clr_hist_by_shop_id(session:PG_ASYNC_SESSION,data:GetCustomerOutstClearedByShopIdSchema=Depends()):
+    ic(data)
+    return await HandleCustomerRequest(session=session).get_outst_clr_by_shop_id(data=data)
+
+@router.get('/cleared-histories/by/id/{shop_id}/{id}')
+async def get_clr_hist_by_id(session:PG_ASYNC_SESSION,data:GetCustomerOutstClearedByIdSchema=Depends()):
+    return await HandleCustomerRequest(session=session).get_outst_clr_by_id(data=data)
+
+@router.get('/cleared-histories')
+async def get_clr_hist(session:PG_ASYNC_SESSION,data:GetAllCustomerOutstClearedSchema=Depends()):
+    return await HandleCustomerRequest(session=session).get_outst_clr(data=data)
+
+
 
 
 

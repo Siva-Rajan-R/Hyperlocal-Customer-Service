@@ -1,5 +1,6 @@
 from ..main import BASE
 from sqlalchemy import Column, String,ForeignKey,Integer,TIMESTAMP,func,BigInteger,Identity,Float,Boolean,BIGINT,UniqueConstraint
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 
 
@@ -11,38 +12,29 @@ class Customers(BASE):
     sequence_id=Column(BigInteger,Identity(always=True),nullable=False)
     shop_id=Column(String, nullable=False)
     name=Column(String,nullable=False)
-    email=Column(String,nullable=False)
-    mobile_number=Column(String,nullable=False)
-    credit_limit=Column(Float,nullable=False)
-    outstanding=Column(Float,nullable=False)
-    is_active=Column(Boolean,nullable=False)
-    datas=Column(JSONB,nullable=False)
+    contact_infos=Column(JSONB)
+    credit_infos=Column(JSONB)
+    location_infos=Column(JSONB)
+    outstanding_infos=Column(JSONB)
+    can_have_credit=Column(Boolean)
+    additional_infos=Column(JSONB)
 
     created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
     updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())
 
-class CustomerCreditHistories(BASE):
-    __tablename__="customer_credit_histories"
-    id=Column(BigInteger,primary_key=True,autoincrement=True)
-    shop_id=Column(String,nullable=False)
-    customer_id=Column(String,nullable=False)
-    credit_before=Column(Float,nullable=False)
-    credit_after=Column(Float,nullable=False)
-    type=Column(String,nullable=False)
-
-    created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
-    updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())
+    cust_out_clr_hist=relationship("CustomerOutstandingClearedHistories",back_populates="customer",cascade="all, delete-orphan")
 
 
 class CustomerOutstandingClearedHistories(BASE):
     __tablename__="customer_outstanding_cleared_histories"
     id=Column(BigInteger,primary_key=True,autoincrement=True)
     shop_id=Column(String,nullable=False)
-    customer_id=Column(String,nullable=False)
-    payments=Column(JSONB,nullable=False)
-    cleared_amount=Column(Float,nullable=False)
-    outstanding_before=Column(Float,nullable=False)
-    outstanding_after=Column(Float,nullable=False)
+    customer_id=Column(String,ForeignKey("customers.id",ondelete="CASCADE"),nullable=False)
+    payment_infos=Column(JSONB,nullable=False)
+    cleared_infos=Column(JSONB)
+    additional_infos=Column(JSONB)
 
     created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
     updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())
+
+    customer=relationship("Customers",back_populates="cust_out_clr_hist")

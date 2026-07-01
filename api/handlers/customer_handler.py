@@ -1,5 +1,5 @@
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerCreditHistories,OutstandingClearedCustomerSchema,DeductCustomerOutstandingSchema,GetCustomerOutstandingCleared
-from schemas.v1.response_schemas.user_schemas.customer_schema import CustomerCreateResponseSchema,CustomerDeleteResponseSchema,CustomerGetResponseSchema,CustomerUpdateResponseSchema
+from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema
+from schemas.v1.customer_schemas.custom_types import CustomerCreditInfosType
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
@@ -12,24 +12,40 @@ from core.utils.validate_fields import validate_fields,validate_internal_fields
 from typing import Optional,List
 from icecream import ic
 
-class HandleCustomerRequest(BaseServiceModel):
+class HandleCustomerRequest:
     def __init__(self, session:AsyncSession):
         self.session=session
 
-
+    # Writables
     async def create(self,data:CreateCustomerSchema):
-        if data.is_active and not data.credit_limit:
+        if data.can_have_credit and not data.credit_infos:
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponseTypDict(
                     status_code=400,
                     msg="Error Creating Customer",
-                    description="Credit limit could not be emplty when customer is active",
+                    description="Credit limit could not be empty when customer is eligible for the credit",
                     success=False
                 )
             )
 
-        res=await CustomerService(session=self.session).create(data=data)
+        if not data.contact_infos.email and not data.contact_infos.mobile_number:
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponseTypDict(
+                    status_code=400,
+                    msg="Error Creating Customer",
+                    description="Please provide a atleast one of the contact info (Email or Mobile number)",
+                    success=False
+                )
+            )
+        
+        credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
+        if not data.can_have_credit:
+            credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
+
+        final_data=CreateCustomerSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos']))
+        res=await CustomerService(session=self.session).create(data=final_data)
         if not res:
             raise HTTPException(
                 status_code=400,
@@ -47,70 +63,39 @@ class HandleCustomerRequest(BaseServiceModel):
                 status_code=201,
                 success=True
             ),
-            data=CustomerCreateResponseSchema(**res) if res else None
-        )
-    
-
-    async def create_outstanding_cleared(self,data:OutstandingClearedCustomerSchema):
-
-        res=await CustomerService(session=self.session).create_outstanding_cleared(data=data)
-        if not res:
-            raise HTTPException(
-                status_code=400,
-                detail=ErrorResponseTypDict(
-                    msg="Error : Creating Outstanting clear customer",
-                    description="Invalid datas for creating customers or Customer already exists",
-                    status_code=400,
-                    success=False
-                )
-            )
-        
-        return SuccessResponseTypDict(
-            detail=BaseResponseTypDict(
-                msg="Customer outstanding cleared successfully",
-                status_code=201,
-                success=True
-            ),
-            data=res
-        )
-    
-
-    async def add_outstanding(self,data:DeductCustomerOutstandingSchema):
-
-        res=await CustomerService(session=self.session).add_outstanding(data=data)
-        if not res:
-            raise HTTPException(
-                status_code=400,
-                detail=ErrorResponseTypDict(
-                    msg="Error : Creating Outstanting adding customer",
-                    description="Invalid datas for creating customers or Customer already exists",
-                    status_code=400,
-                    success=False
-                )
-            )
-        
-        return SuccessResponseTypDict(
-            detail=BaseResponseTypDict(
-                msg="Customer outstanding adding successfully",
-                status_code=201,
-                success=True
-            ),
-            data=res
+            data=res if res else None
         )
 
 
     async def update(self,data:UpdateCustomerSchema):
-        if data.is_active and not data.credit_limit:
+        if data.can_have_credit and not data.credit_infos:
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponseTypDict(
                     status_code=400,
                     msg="Error Creating Customer",
-                    description="Credit limit could not be emplty when customer is active",
+                    description="Credit limit could not be empty when customer is eligible for the credit",
                     success=False
                 )
             )
-        res=await CustomerService(session=self.session).update(data=data)
+
+        if data.contact_infos and (not data.contact_infos.email and not data.contact_infos.mobile_number):
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponseTypDict(
+                    status_code=400,
+                    msg="Error Creating Customer",
+                    description="Please provide a atleast one of the contact info (Email or Mobile number)",
+                    success=False
+                )
+            )
+        
+        credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
+        if not data.can_have_credit:
+            credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
+            
+        final_data=UpdateCustomerSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos']))
+        res=await CustomerService(session=self.session).update(data=final_data)
         if not res:
             raise HTTPException(
                 status_code=400,
@@ -128,7 +113,7 @@ class HandleCustomerRequest(BaseServiceModel):
                 status_code=200,
                 success=True
             ),
-            data=CustomerUpdateResponseSchema(**res) if res else None
+            data=res if res else None
         )
 
 
@@ -151,90 +136,40 @@ class HandleCustomerRequest(BaseServiceModel):
                 status_code=200,
                 success=True
             ),
-            data=CustomerDeleteResponseSchema(**res) if res else None
-        )
-
-
-    async def get(self,data:GetAllCustomerSchema):
-        res=await CustomerService(session=self.session).get(data=data)
-        
-        if data.offset == 1:
-            data_to_send = {
-                "overall_datas": res.get("overall_datas", {}),
-                "datas": [CustomerGetResponseSchema(**r) for r in res.get("datas", [])]
-            }
-        else:
-            data_to_send = [CustomerGetResponseSchema(**r) for r in res.get("datas", [])]
-
-        return SuccessResponseTypDict(
-            detail=BaseResponseTypDict(
-                msg="Customer fetched successfully",
-                status_code=200,
-                success=True
-            ),
-            data=data_to_send
-        )
-    
-    async def get_outstanding_cleared(self,data:GetCustomerOutstandingCleared):
-        res=await CustomerService(session=self.session).get_outstanding_cleared(data=data)
-        return SuccessResponseTypDict(
-            detail=BaseResponseTypDict(
-                msg="Customer fetched successfully",
-                status_code=200,
-                success=True
-            ),
-            data=res
-        )
-    
-    async def get_customer_credit_histories(self,data:GetCustomerCreditHistories):
-        res=await CustomerService(session=self.session).get_customer_credit_histories(data=data)
-
-        return SuccessResponseTypDict(
-            detail=BaseResponseTypDict(
-                msg="Customer Credit Histories fetched successfully",
-                status_code=200,
-                success=True
-            ),
-            data=res
-        )
-
-    async def getby_id(self,data:GetCustomerByIdSchema):
-        res=await CustomerService(session=self.session).getby_id(data=data)
-        return SuccessResponseTypDict(
-            detail=BaseResponseTypDict(
-                msg="Customer fetched successfully",
-                status_code=200,
-                success=True
-            ),
-            data=CustomerGetResponseSchema(**res) if res else None
+            data=res if res else None
         )
     
 
-    async def getby_shop_id(self,data:GetCustomerByShopIdSchema):
-        ic(data)
-        res=await CustomerService(session=self.session).getby_shop_id(data=data)
+    async def add_outstanding(self,data:CreateCustomerOutstandingSchema) -> dict | None:
+        res=await CustomerService(session=self.session).add_outstanding(data=data)
         ic(res)
-        
-        if data.offset == 1:
-            data_to_send = {
-                "overall_datas": res.get("overall_datas", {}),
-                "datas": [CustomerGetResponseSchema(**r) for r in res.get("datas", [])]
-            }
-        else:
-            data_to_send = [CustomerGetResponseSchema(**r) for r in res.get("datas", [])]
-
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
-                msg="Customer fetched successfully",
+                msg="Outstanding added successfully",
                 status_code=200,
                 success=True
             ),
-            data=data_to_send
+            data=res if res else None
         )
+    
+    
+    async def clear_outstanding(self,data:CreateCustomerOutstandingClearedSchema) -> dict | None:
+        res=await CustomerService(session=self.session).clear_outstanding(data=data)
+        ic(res)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Outstanding cleared successfully",
+                status_code=200,
+                success=True
+            ),
+            data=res if res else None
+        )
+    
 
+    # Readabels
+    async def get_customers(self,data:GetAllCustomerSchema):
+        res=await CustomerService(session=self.session).get_customers(data=data)
 
-    async def search(self, query:str, limit:Optional[int]=5):
-        res=await CustomerService(session=self.session).search(query=query,limit=limit)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Customer fetched successfully",
@@ -243,3 +178,70 @@ class HandleCustomerRequest(BaseServiceModel):
             ),
             data=res
         )
+    
+
+    async def get_customer_by_id(self,data:GetCustomerByIdSchema):
+        res=await CustomerService(session=self.session).get_customer_by_id(data=data)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer fetched successfully",
+                status_code=200,
+                success=True
+            ),
+            data=res if res else None
+        )
+    
+
+    async def get_customer_by_shop_id(self,data:GetCustomerByShopIdSchema):
+        ic(data)
+        res=await CustomerService(session=self.session).get_customer_by_shop_id(data=data)
+
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer fetched successfully",
+                status_code=200,
+                success=True
+            ),
+            data=res
+        )
+    
+
+
+    async def get_outst_clr(self,data:GetAllCustomerOutstClearedSchema) -> List[dict] | None:
+        res=await CustomerService(session=self.session).get_outst_clr(data=data)
+        ic(res)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer outstanding fetched successfully",
+                status_code=200,
+                success=True
+            ),
+            data=res
+        )
+    
+    async def get_outst_clr_by_shop_id(self,data:GetCustomerOutstClearedByShopIdSchema) -> List[dict] | None:
+        res=await CustomerService(session=self.session).get_outst_clr_by_shop_id(data=data)
+        ic(res)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer outstanding fetched successfully",
+                status_code=200,
+                success=True
+            ),
+            data=res
+        )
+    
+    async def get_outst_clr_by_id(self,data:GetCustomerOutstClearedByIdSchema) -> dict | None:
+        res=await CustomerService(session=self.session).get_outst_clr_by_id(data=data)
+        ic(res)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Customer outstanding fetched successfully",
+                status_code=200,
+                success=True
+            ),
+            data=res
+        )
+
+
+    

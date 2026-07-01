@@ -1,251 +1,293 @@
 from ..main import AsyncSession
 from ..repos.customer_repo import CustomerRepo
-from schemas.v1.db_schemas.customer_schema import CreateCustomerDbSchema,UpdateCustomerDbSchema,CreditHistoryCustomerDbSchema,OutstandingClearedCustomerDbSchema
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,GetCustomerCreditHistories,OutstandingClearedCustomerSchema,DeductCustomerOutstandingSchema,GetCustomerOutstandingCleared
+from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema
+from schemas.v1.customer_schemas.db_schemas import CreateCustomerDbSchema,UpdateCustomerDbSchema,DeleteCustomerDbSchema,CreateCustomerOutstandingClearedDbSchema,CreateCustomerOutstandingDbSchema
+from schemas.v1.customer_schemas.custom_types import CustomerOutstandingInfosType,CustomerClearedInfosType,CustomerCreditInfosType
+
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 from fastapi.exceptions import HTTPException
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
 from core.decorators.error_handler_dec import catch_errors
-from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums
+from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerOutstandingAddEnums,StatsUpdateType
+from ...read_db.repos.customer_repo import CustomerStatsRepo
+from ...read_db.models.customer_model import CustomerStatsSchema
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from typing import Optional,List
 from ..models.customer_model import Customers
 from icecream import ic
 import httpx
 
-ACTIVITY_LOG_URL = "http://127.0.0.1:8001/activity-logs"
-
-async def _send_activity_log(shop_id: str, action: str, entity_id: str, description: str, changes: list = None):
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(ACTIVITY_LOG_URL, json={
-                "shop_id": shop_id,
-                "user_name": "siva",
-                "service": "Customer",
-                "action": action,
-                "entity_type": "Customer",
-                "entity_id": entity_id,
-                "description": description,
-                "changes": changes or []
-            })
-    except Exception as e:
-        ic(f"Failed to log activity: {e}")
+from hyperlocal_platform.core.utils.activity_logger import ActivityLogger
 
 
 
-class CustomerService(BaseServiceModel):
+class CustomerService:
     def __init__(self, session:AsyncSession):
-        super().__init__(session)
+        self.session=session
         self.customer_repo_obj=CustomerRepo(session=session)
+        self.customer_stats_repo_obj=CustomerStatsRepo
 
+    # Writables
     async def create(self,data:CreateCustomerSchema) -> dict | None:
-        
         customer_id:str=generate_uuid()
-        shop_id = data.shop_id
-        customer_name = data.name if hasattr(data, 'name') else 'Unknown'
-        
-        from infras.read_db.repos.shopidconfig_repo import ShopIdConfigReadDbRepo
-        from core.utils.id_formatter import format_ui_id
-        
-        shop_config = await ShopIdConfigReadDbRepo.get_config(shop_id)
-        cus_config = shop_config.get("customer", {})
-        prefix = cus_config.get("prefix", "CUS")
-        start_from = cus_config.get("start_from", 1)
-        
-        raw_sequence = await self.customer_repo_obj.get_next_sequence(shop_id, start_from)
-        ui_id_str = format_ui_id(prefix, start_from, raw_sequence)
+        ui_id:str=generate_uuid()
+        final_data=CreateCustomerDbSchema(id=customer_id,ui_id=ui_id,**data.model_dump())
+        res=await self.customer_repo_obj.create(data=final_data)
+        ic(res)
 
-        data_toadd=CreateCustomerDbSchema(
-            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True),
-            id=customer_id,
-            ui_id=ui_id_str,
-            outstanding=0
-        )
+        if res:
+            total_credits=data.credit_infos.limit if data.can_have_credit else 0
+            total_customers=1
+            total_customer_with_credit=1 if data.can_have_credit else 0
+            total_outstanding=0
 
-        customer_res=await self.customer_repo_obj.create(data=data_toadd)
-        if customer_res:
-            customer_res = dict(customer_res)
-            await _send_activity_log(
-                shop_id=shop_id,
+            ic(total_customer_with_credit,total_credits,total_outstanding,total_customers)
+            stats_data=CustomerStatsSchema(
+                total_credits=total_credits,
+                total_customers=total_customers,
+                total_customer_with_credit=total_customer_with_credit,
+                total_outstanding=total_outstanding
+            )
+
+            await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+            
+            customer_name = data.name if hasattr(data, 'name') else 'Unknown'
+            await ActivityLogger.log(
+                shop_id=data.shop_id,
+                service="Customer",
                 action="CREATE",
+                entity_type="Customer",
                 entity_id=customer_id,
                 description=f"Created new customer: {customer_name}",
                 changes=[{"field": "name", "before": "", "after": str(customer_name)}]
             )
-        return customer_res
-    
 
-    async def create_outstanding_cleared(self,data:OutstandingClearedCustomerSchema) -> dict | None:
-        out_ded_res=await self.customer_repo_obj.deduct_outstanding(data=DeductCustomerOutstandingSchema(id=data.customer_id,shop_id=data.shop_id,amount=data.cleared_amount))
-        ic(out_ded_res)
-        if not out_ded_res:
-            return False
-        
-        data_toadd=OutstandingClearedCustomerDbSchema(
-            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True),
-            outstanding_before=out_ded_res['outstanding']+data.cleared_amount,
-            outstanding_after=out_ded_res['outstanding']
-        )
-
-        customer_res=await self.customer_repo_obj.create_outstanding_cleared(data=data_toadd)
-        return customer_res
-    
-    async def add_outstanding(self,data:DeductCustomerOutstandingSchema) -> dict | None:
-        out_add_res=await self.customer_repo_obj.add_outstanding(data=data)
-        ic(out_add_res)
-        return out_add_res
+        return res
     
 
     async def update(self,data:UpdateCustomerSchema) -> dict | None:
-        previous_credit=(await self.getby_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id)))
-        ic(previous_credit)
-        if not previous_credit:
+        cust_get_res=await self.get_customer_by_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id))
+        ic(cust_get_res)
+        if not cust_get_res:
+            ic("The given customer doesn't exists")
             return False
         
-        data_toupdate=UpdateCustomerDbSchema(
-            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True)
-        )
-        customer_res=await self.customer_repo_obj.update(data=data_toupdate)
-        ic(customer_res)
-        if customer_res:
-            customer_res = (await _format_ui_id_for_customers(data.shop_id, [customer_res]))[0]
-            if data.credit_limit and data.credit_limit!=previous_credit['credit_limit'] and previous_credit['is_active']==True:
-                customer_credit_res=await self.customer_repo_obj.create_credit_history(
-                    data=CreditHistoryCustomerDbSchema(
-                        shop_id=data.shop_id,
-                        customer_id=data.id,
-                        credit_before=previous_credit['credit_limit'],
-                        credit_after=customer_res['credit_limit'],
-                        type=CustomerCreditHistoryEnums.UPDATED
-                        
-                    )
-                )
+        
+        credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
+        if not data.can_have_credit:
+            credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
 
-                ic(customer_credit_res)
+        final_data=UpdateCustomerDbSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos']))
 
-            if previous_credit:
-                changes_list = []
-                desc_changes = []
-                for k, v in data_toupdate.model_dump(exclude_none=True, exclude_unset=True).items():
-                    if k not in ["id", "shop_id"] and k in previous_credit and str(previous_credit[k]) != str(v):
-                        desc_changes.append(f"{k} prv({previous_credit[k]}) after ({v})")
-                        changes_list.append({
-                            "field": k,
-                            "before": str(previous_credit[k]),
-                            "after": str(v)
-                        })
-                
-                if desc_changes:
-                    desc = f"updated customer {', '.join(desc_changes)}"
-                    await _send_activity_log(
-                        shop_id=data.shop_id,
-                        action="UPDATE",
-                        entity_id=data.id,
-                        description=desc,
-                        changes=changes_list
-                    )
+        res=await self.customer_repo_obj.update(data=final_data)
+        ic(res)
 
-        return customer_res
-    
+        # For read Db
+        if res:
+            total_credits=abs(data.credit_infos.limit - cust_get_res['credit_infos']['limit']) if data.can_have_credit else -cust_get_res['credit_infos']['limit']
+            ic(total_credits)
+            if data.can_have_credit and (data.credit_infos.limit<cust_get_res['credit_infos']['limit']):
+                total_credits=-total_credits
+            total_customers=0
+            total_customer_with_credit=0 
+            if(data.can_have_credit!=cust_get_res['can_have_credit'] and data.can_have_credit):
+                total_customer_with_credit=1
+            elif (data.can_have_credit!=cust_get_res['can_have_credit'] and not data.can_have_credit):
+                total_customer_with_credit=-1
+            else:
+                total_customer_with_credit=0
 
-    async def deduct_credit(self,data:DeductCustomerCreditSchema):
-        previous_credit=(await self.getby_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id)))
-        ic(previous_credit)
-        if not previous_credit:
-            return False
-        customer_res=await self.customer_repo_obj.deduct_credit(data=data)
-        ic(customer_res)
-        if customer_res and previous_credit['is_active']==True:
-            customer_credit_res=await self.customer_repo_obj.create_credit_history(
-                data=CreditHistoryCustomerDbSchema(
-                    id=generate_uuid(),
-                    shop_id=data.shop_id,
-                    customer_id=data.id,
-                    credit_before=previous_credit['credit_limit'],
-                    credit_after=customer_res['credit_limit'],
-                    type=CustomerCreditHistoryEnums.SALES
-                    
-                )
+            total_outstanding=0
+
+            ic(total_credits,total_customers,total_customer_with_credit,total_outstanding)
+            stats_data=CustomerStatsSchema(
+                total_credits=total_credits,
+                total_customers=total_customers,
+                total_customer_with_credit=total_customer_with_credit,
+                total_outstanding=total_outstanding
             )
 
-            ic(customer_credit_res)
-        return customer_res
+            await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+
+            changes_list = ActivityLogger.compute_changes(cust_get_res, data.model_dump(exclude_none=True, exclude_unset=True))
+            if changes_list:
+                desc_changes = [f"{c['field']} prv({c['before']}) after ({c['after']})" for c in changes_list]
+                desc = f"updated customer {', '.join(desc_changes)}"
+                await ActivityLogger.log(
+                    shop_id=data.shop_id,
+                    service="Customer",
+                    action="UPDATE",
+                    entity_type="Customer",
+                    entity_id=data.id,
+                    description=desc,
+                    changes=changes_list
+                )
+
+        return res
     
-
-
     async def delete(self,data:DeleteCustomerSchema) -> dict | None:
-        old_customer = await self.getby_id(data=GetCustomerByIdSchema(id=data.id, shop_id=data.shop_id))
-        res=await self.customer_repo_obj.delete(data=data)
+        final_data=DeleteCustomerDbSchema(**data.model_dump())
+        res=await self.customer_repo_obj.delete(data=final_data)
+        ic(res)
+
         if res:
-            res = (await _format_ui_id_for_customers(data.shop_id, [res]))[0]
-            customer_name = old_customer.get('name', 'Unknown') if old_customer else 'Unknown'
-            await _send_activity_log(
+            total_credits=-res['credit_infos']['limit']
+            total_customers=-1
+            total_customer_with_credit=-1 if res['can_have_credit'] else 0
+            total_outstanding=-res['outstanding_infos']['amount'] if res['outstanding_infos'] else 0
+
+            stats_data=CustomerStatsSchema(
+                total_customers=total_customers,
+                total_customer_with_credit=total_customer_with_credit,
+                total_credits=total_credits,
+                total_outstanding=total_outstanding
+            )
+
+            await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+            
+            customer_name = res.get('name', 'Unknown')
+            await ActivityLogger.log(
                 shop_id=data.shop_id,
+                service="Customer",
                 action="DELETE",
+                entity_type="Customer",
                 entity_id=data.id,
                 description=f"Deleted customer: {customer_name}",
                 changes=[{"field": "name", "before": str(customer_name), "after": "DELETED"}]
             )
+
         return res
-
-
-    async def get(self,data:GetAllCustomerSchema) -> dict:
-        res=await self.customer_repo_obj.get(data=data)
-        res = await _format_ui_id_for_customers(data.shop_id, res)
-        if data.offset == 1:
-            overall_values = await self.customer_repo_obj.get_overall_values(data=data)
-            return {
-                "overall_datas": overall_values,
-                "datas": res
-            }
-        return {"datas": res}
     
-    async def get_outstanding_cleared(self,data:GetCustomerOutstandingCleared) -> List[dict] | list:
-        res=await self.customer_repo_obj.get_outstanding_cleared(data=data)
-        return res
+    async def add_outstanding(self,data:CreateCustomerOutstandingSchema) -> dict | None:
+        cur_outst_amt=data.outstanding_infos.amount
+        # STEP-1 CHECKING THE TYPE IF INCREMENT MEANS NEED TO DO CUSTOMER EXISTANCE FOR GETTTING PREVIOUS VALUES
+        if data.type!=CustomerOutstandingAddEnums.DIRECT:
+            cust_get_res=await self.get_customer_by_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id))
+            if not cust_get_res:
+                ic("The given customer doesn't exists")
+                return False
+            ic(cust_get_res)
+            prev_outst_amt=cust_get_res.get('outstanding_infos').get("amount",0) if cust_get_res.get('outstanding_infos') else 0
+            cur_outst_amt=prev_outst_amt+data.outstanding_infos.amount if data.type==CustomerOutstandingAddEnums.INCREMENT else prev_outst_amt-data.outstanding_infos.amount
+            if cur_outst_amt<0:
+                ic("Credit amount should not be goes into negative")
+                return False
+        outstanding_infos=CustomerOutstandingInfosType(amount=cur_outst_amt)
+        final_data=CreateCustomerOutstandingDbSchema(outstanding_infos=outstanding_infos,**data.model_dump(exclude=['outstanding_infos']))
+        res=await self.customer_repo_obj.add_outstanding(data=final_data)
+        ic(res)
 
-    async def get_customer_credit_histories(self,data:GetCustomerCreditHistories):
-        res=await self.customer_repo_obj.get_customer_credit_histories(data=data)
-        return res
-
-    async def getby_id(self,data:GetCustomerByIdSchema) -> dict | None:
-        res=await self.customer_repo_obj.getby_id(data=data)
         if res:
-            res = dict(res)
-        return res
-    
-    async def getby_shop_id(self,data:GetCustomerByShopIdSchema) -> dict:
-        res=await self.customer_repo_obj.getby_shop_id(data=data)
-        if data.offset == 1:
-            overall_values = await self.customer_repo_obj.get_overall_values(data=data)
-            return {
-                "overall_datas": overall_values,
-                "datas": res
-            }
-        return {"datas": res}
-    
-    async def verify(self,data:VerifyCustomerSchema) -> dict:
-        res=await self.customer_repo_obj.verify(data=data)
-        return res
-    
 
+            total_customers=0
+            total_customer_with_credit=0
+            total_credits=0
+            total_outstanding=data.outstanding_infos.amount
 
-
-
-    async def search(self, query:str, limit:Optional[int]=5):
-        res=await self.customer_repo_obj.search(query=query,limit=limit)
-        return res
-    
-    async def check_bulk(self,datas:list):
-        return await self.customer_repo_obj.check_bulk(data=datas)
-
-    async def create_bulk(self,datas:List[CreateCustomerSchema]):
-        datas_toadd=[]
-        for data in datas:
-            datas_toadd.append(
-                Customers(id=generate_uuid(),**data.model_dump(mode='json'))
+            stats_data=CustomerStatsSchema(
+                total_customers=total_customers,
+                total_customer_with_credit=total_customer_with_credit,
+                total_credits=total_credits,
+                total_outstanding=total_outstanding
             )
 
-        return await self.customer_repo_obj.create_bulk(datas=datas_toadd)
+            await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+
+        return res
+    
+    
+    async def clear_outstanding(self,data:CreateCustomerOutstandingClearedSchema) -> dict | None:
+        outst_clr_id=generate_uuid()
+        # STEP-1 CHECKING THE CUSTOMER EXISTANCE FOR GETTTING PREVIOUS VALUES
+        cust_get_res=await self.get_customer_by_id(data=GetCustomerByIdSchema(id=data.customer_id,shop_id=data.shop_id))
+        if not cust_get_res:
+            ic("The given customer doesn't exists")
+            return False
+        
+        # STEP-2 GETTING THE CLEARED AMOUNT AND CREATING THE BEFORE AND AFTER OUTSTANDING INFO
+        prev_outst_amt=cust_get_res.get('outstanding_infos').get("amount",0) if cust_get_res.get('outstanding_infos') else 0
+        amount_cleared=0
+
+        for payinfo in data.payment_infos:
+            amount_cleared+=payinfo.amount
+
+        if amount_cleared>prev_outst_amt:
+            ic("Outstanding clearing amount should not be grater than the outstanding amount")
+            return False
+        
+        cur_outst_amt=prev_outst_amt-amount_cleared
+        if cur_outst_amt<0:
+            ic("Credit amount should not be goes into negative")
+            return False
+        
+        cleared_infos=CustomerClearedInfosType(
+            outstanding_before=prev_outst_amt,
+            outstanding_after=cur_outst_amt
+        )
+
+        # STEP-3 UPDAING ON THE DB
+        final_data=CreateCustomerOutstandingClearedDbSchema(cleared_infos=cleared_infos,**data.model_dump())
+        outstanding_infos=CustomerOutstandingInfosType(amount=cur_outst_amt)
+        # STEP-3 (STEP-1) UPDATE THE CUSTOMER OUTSTANDING 
+        cust_upd_res=await self.add_outstanding(data=CreateCustomerOutstandingSchema(id=data.customer_id,shop_id=data.shop_id,outstanding_infos=outstanding_infos,type=CustomerOutstandingAddEnums.DIRECT))
+        ic(cust_upd_res)
+        if not cust_upd_res:
+            ic("Error Updating the customer outstanding")
+            return False
+        # STEP-3 (STEP-2) THEN CREATE THE CLEAR OUTSTANDING
+        outst_clr_res=await self.customer_repo_obj.clear_outstanding(data=final_data)
+        ic(outst_clr_res)
+
+        if outst_clr_res:
+
+            total_customers=0
+            total_customer_with_credit=0
+            total_credits=0
+            total_outstanding=-amount_cleared
+            ic(total_credits,total_customers,total_customer_with_credit,total_outstanding)
+
+            stats_data=CustomerStatsSchema(
+                total_customers=total_customers,
+                total_customer_with_credit=total_customer_with_credit,
+                total_credits=total_credits,
+                total_outstanding=total_outstanding
+            )
+
+            await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+            
+        return outst_clr_res
+    
+
+    # Readables
+    async def get_customers(self,data:GetAllCustomerSchema) -> List[dict] | None:
+        res=await self.customer_repo_obj.get(data=data)
+        ic(res)
+        return res
+    
+    async def get_customer_by_shop_id(self,data:GetCustomerByShopIdSchema) -> List[dict] | None:
+        res=await self.customer_repo_obj.getby_shop_id(data=data)
+        ic(res)
+        return res
+    
+    async def get_customer_by_id(self,data:GetCustomerByIdSchema) -> dict | None:
+        res=await self.customer_repo_obj.getby_id(data=data)
+        ic(res)
+        return res
+    
+
+    async def get_outst_clr(self,data:GetAllCustomerOutstClearedSchema) -> List[dict] | None:
+        res=await self.customer_repo_obj.get_outst_cleared(data=data)
+        ic(res)
+        return res
+    
+    async def get_outst_clr_by_shop_id(self,data:GetCustomerOutstClearedByShopIdSchema) -> List[dict] | None:
+        res=await self.customer_repo_obj.get_outst_cleared_by_shop_id(data=data)
+        ic(res)
+        return res
+    
+    async def get_outst_clr_by_id(self,data:GetCustomerOutstClearedByIdSchema) -> dict | None:
+        res=await self.customer_repo_obj.get_outst_cleared_by_id(data=data)
+        ic(res)
+        return res

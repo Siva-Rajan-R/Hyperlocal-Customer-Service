@@ -1,7 +1,8 @@
 from motor.motor_asyncio import AsyncIOMotorClient
-from core.settings import CustomerSettings
+from core.configs.settings_config import SETTINGS
 
-READ_DB_URL="mongodb://localhost:27017"
+
+READ_DB_URL=SETTINGS.READ_DB_URL
 
 CLIENT=None
 READ_DATABASE=None

@@ -1,4 +1,5 @@
-from ..main import READ_DATABASE
+from .. import main
 
 def customer_collection():
-    return READ_DATABASE['customers']
+    print(main.READ_DATABASE)
+    return main.READ_DATABASE['CustomerCollections']

@@ -10,7 +10,6 @@ async def worker():
     # Exchanges
     exchanges=[
         {'name':'customers.service.exchange','exc_type':ExchangeType.DIRECT},
-        {'name':'hyperlocal_domain_events','exc_type':ExchangeType.DIRECT}
     ]
 
     for exchange in exchanges:
@@ -18,8 +17,7 @@ async def worker():
 
     # Queues
     queues=[
-        {'exc_name':'customers.service.exchange','q_name':'customers.service.queue','r_key':'customers.service.routing.key'},
-        {'exc_name':'hyperlocal_domain_events','q_name':'customer_service_shopconfig_q','r_key':'hyperlocal.shopconfig.updated'}
+        {'exc_name':'customers.service.exchange','q_name':'customers.service.queue','r_key':'customers.service.routing.key'}
     ]
 
     for queue in queues:
@@ -39,7 +37,12 @@ async def worker():
         await rabbitmq_msg_obj.consume_event(queue_name=consumer['q_name'],handler=consumer['handler'])
 
     # Start ShopConfig Consumer
-    shop_config_consumer = ShopConfigMsgQueueConsumer()
-    await shop_config_consumer.consume()
+    # shop_config_consumer = ShopConfigMsgQueueConsumer()
+    # await shop_config_consumer.consume()
+
+    # # Start CustomerMsgQueueConsumer for outstanding balance updates
+    # from .msgqueue_consumers.customer_msgqueue_consumer import CustomerMsgQueueConsumer
+    # customer_consumer = CustomerMsgQueueConsumer()
+    # await customer_consumer.consume()
 
     await asyncio.Event().wait()

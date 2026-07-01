@@ -8,7 +8,9 @@ import os,asyncio
 from core.configs.settings_config import SETTINGS
 from hyperlocal_platform.core.enums.environment_enum import EnvironmentEnum
 from messaging.worker import worker
+from infras.read_db.repos.customer_repo import CustomerStatsRepo
 from infras.read_db.main import init_read_db,close_read_db
+
 load_dotenv()
 
 
@@ -17,6 +19,8 @@ async def customer_service_lifespan(app:FastAPI):
     try:
         ic("Starting customer service...")
         await init_pg_db()
+        await init_read_db()
+        # await CustomerStatsRepo.init_stats()
         asyncio.create_task(worker())
         yield
 

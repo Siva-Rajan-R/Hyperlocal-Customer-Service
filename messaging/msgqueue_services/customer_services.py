@@ -1,9 +1,10 @@
 from infras.primary_db.services.customer_service import CustomerService
 from sqlalchemy.ext.asyncio import AsyncSession
 from infras.primary_db.main import AsyncCustomerLocalSession
-from schemas.v1.request_schemas.customer_schema import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,VerifyCustomerSchema,DeductCustomerCreditSchema,OutstandingClearedCustomerSchema,DeductCustomerOutstandingSchema
+from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema
+
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
-from schemas.v1.response_schemas.msgqueue_schemas.customer_schema import CustomerCreateResponseSchema,CustomerDeleteResponseSchema,CustomerGetResponseSchema,CustomerUpdateResponseSchema
+from schemas.v1.customer_schemas.response_schemas.msgqueue_schemas.customer_schema import CustomerCreateResponseSchema,CustomerDeleteResponseSchema,CustomerGetResponseSchema,CustomerUpdateResponseSchema
 from typing import Optional,List,Union
 from icecream import ic
 
@@ -43,42 +44,13 @@ class MessagingQueueCustomerService:
                 return res
             return CustomerDeleteResponseSchema(**res).model_dump(mode="json")
         
-    async def deduct_credit_customer(self,data:Union[DeductCustomerCreditSchema,dict]):
-        async with AsyncCustomerLocalSession() as session:
-            customer_service_obj=CustomerService(session=session)
-            if isinstance(data, dict):
-                data = DeductCustomerCreditSchema(**data)
-            
-            res=await customer_service_obj.deduct_credit(data=data)
-            if not res:
-                return res
-            
-            return CustomerGetResponseSchema(**res) if res else None
-        
-    async def add_outstanding_customer(self,data:Union[DeductCustomerOutstandingSchema,dict]):
-        async with AsyncCustomerLocalSession() as session:
-            customer_service_obj=CustomerService(session=session)
-            if isinstance(data, dict):
-                data = DeductCustomerOutstandingSchema(**data)
-            
-            res=await customer_service_obj.add_outstanding(data=data)
-            return res
-
-    async def create_outstanding_cleared_customer(self,data:Union[OutstandingClearedCustomerSchema,dict]):
-        async with AsyncCustomerLocalSession() as session:
-            customer_service_obj=CustomerService(session=session)
-            if isinstance(data, dict):
-                data = OutstandingClearedCustomerSchema(**data)
-            
-            res=await customer_service_obj.create_outstanding_cleared(data=data)
-            return res
 
     async def get_customers(self,data:Union[GetAllCustomerSchema,dict]):
         async with AsyncCustomerLocalSession() as session:
             customer_service_obj=CustomerService(session=session)
             if isinstance(data, dict):
                 data = GetAllCustomerSchema(**data)
-            res=await customer_service_obj.get(data=data)
+            res=await customer_service_obj.get_customers(data=data)
             if not res:
                 return res
             return [CustomerGetResponseSchema(**r).model_dump(mode="json") for r in res]
@@ -88,26 +60,37 @@ class MessagingQueueCustomerService:
             customer_service_obj=CustomerService(session=session)
             if isinstance(data, dict):
                 data = GetCustomerByIdSchema(**data)
-            res=await customer_service_obj.getby_id(data=data)
+            res=await customer_service_obj.get_customer_by_id(data=data)
             if not res:
                 return res 
-            return CustomerGetResponseSchema(**res).model_dump(mode="json")
+            return res
         
     async def get_customer_by_shop_id(self,data:GetCustomerByShopIdSchema):
         async with AsyncCustomerLocalSession() as session:
             customer_service_obj=CustomerService(session=session)
             if isinstance(data, dict):
                 data = GetCustomerByIdSchema(**data)
-            res=await customer_service_obj.getby_shop_id(data=data)
+            res=await customer_service_obj.get_customer_by_shop_id(data=data)
             if not res:
                 return res 
             return CustomerGetResponseSchema(**res).model_dump(mode="json")
         
-    async def verify_customer(self,data:Union[VerifyCustomerSchema,dict])-> bool:
-        ic(data)
+    async def add_customer_outstanding(self,data:Union[CreateCustomerOutstandingSchema,dict]):
         async with AsyncCustomerLocalSession() as session:
             customer_service_obj=CustomerService(session=session)
             if isinstance(data, dict):
-                data = VerifyCustomerSchema(**data)
-            res=await customer_service_obj.verify(data=data)
+                data = CreateCustomerOutstandingSchema(**data)
+            res=await customer_service_obj.add_outstanding(data=data)
+            if not res:
+                return res
+            return res
+        
+    async def clear_customer_outstanding(self,data:Union[CreateCustomerOutstandingClearedSchema,dict]):
+        async with AsyncCustomerLocalSession() as session:
+            customer_service_obj=CustomerService(session=session)
+            if isinstance(data, dict):
+                data = CreateCustomerOutstandingClearedSchema(**data)
+            res=await customer_service_obj.clear_outstanding(data=data)
+            if not res:
+                return res
             return res
