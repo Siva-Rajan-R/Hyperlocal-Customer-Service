@@ -11,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.utils.validate_fields import validate_fields,validate_internal_fields
 from typing import Optional,List
 from icecream import ic
-
+from infras.primary_db.repos.customfield_repo import CustomFieldsRepo
+from schemas.v1.db_schemas.customfield_schema import CreateCustomFieldValueDbSchema
+from core.utils.validate_custom_fields import validate_and_filter_custom_fields
 class HandleCustomerRequest:
     def __init__(self, session:AsyncSession):
         self.session=session
@@ -43,8 +45,11 @@ class HandleCustomerRequest:
         credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
         if not data.can_have_credit:
             credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
+            
+        defined_fields = await CustomFieldsRepo(session=self.session).get_all_fields(shop_id=data.shop_id)
+        valid_custom_fields = validate_and_filter_custom_fields(data.custom_fields, defined_fields)
 
-        final_data=CreateCustomerSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos']))
+        final_data=CreateCustomerSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos', 'custom_fields']))
         res=await CustomerService(session=self.session).create(data=final_data)
         if not res:
             raise HTTPException(
@@ -56,6 +61,20 @@ class HandleCustomerRequest:
                     success=False
                 )
             )
+            
+        defined_fields_map = {field['field_name']: field['id'] for field in defined_fields}
+        for field_name, value in valid_custom_fields.items():
+            field_id = defined_fields_map.get(field_name)
+            if field_id:
+                await CustomFieldsRepo(session=self.session).upsert_field_value(
+                    data=CreateCustomFieldValueDbSchema(
+                        id=generate_uuid(),
+                        shop_id=data.shop_id,
+                        customer_id=res['id'],
+                        field_id=field_id,
+                        value=str(value)
+                    )
+                )
         
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
@@ -94,7 +113,10 @@ class HandleCustomerRequest:
         if not data.can_have_credit:
             credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
             
-        final_data=UpdateCustomerSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos']))
+        defined_fields = await CustomFieldsRepo(session=self.session).get_all_fields(shop_id=data.shop_id)
+        valid_custom_fields = validate_and_filter_custom_fields(data.custom_fields, defined_fields)
+
+        final_data=UpdateCustomerSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos', 'custom_fields']))
         res=await CustomerService(session=self.session).update(data=final_data)
         if not res:
             raise HTTPException(
@@ -106,6 +128,20 @@ class HandleCustomerRequest:
                     success=False
                 )
             )
+            
+        defined_fields_map = {field['field_name']: field['id'] for field in defined_fields}
+        for field_name, value in valid_custom_fields.items():
+            field_id = defined_fields_map.get(field_name)
+            if field_id:
+                await CustomFieldsRepo(session=self.session).upsert_field_value(
+                    data=CreateCustomFieldValueDbSchema(
+                        id=generate_uuid(),
+                        shop_id=data.shop_id,
+                        customer_id=res['id'],
+                        field_id=field_id,
+                        value=str(value)
+                    )
+                )
         
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
