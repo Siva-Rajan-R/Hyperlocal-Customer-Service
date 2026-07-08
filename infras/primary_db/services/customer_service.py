@@ -16,10 +16,13 @@ from ...read_db.models.customer_model import CustomerStatsSchema
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from typing import Optional,List
 from ..models.customer_model import Customers
+from ..services.customfield_service import CustomFieldsService,CreateCustomFieldValueSchema
 from icecream import ic
 import httpx
+from integrations.utility_service import get_ui_id, get_shop_category, get_shop_unit
 
 from hyperlocal_platform.core.utils.activity_logger import ActivityLogger
+
 
 
 
@@ -32,11 +35,26 @@ class CustomerService:
     # Writables
     async def create(self,data:CreateCustomerSchema) -> dict | None:
         customer_id:str=generate_uuid()
-        ui_id:str=generate_uuid()
+        ui_id_res = await get_ui_id(shop_id=data.shop_id)
+        if isinstance(ui_id_res, dict) and "prefix" in ui_id_res:
+            ui_id = f"{ui_id_res.get('prefix')}-{ui_id_res.get('current_number')}"
+        else:
+            return False
         final_data=CreateCustomerDbSchema(id=customer_id,ui_id=ui_id,**data.model_dump())
         res=await self.customer_repo_obj.create(data=final_data)
         ic(res)
 
+        cust_obj=await CustomFieldsService(session=self.session).upsert_values(
+            data=CreateCustomFieldValueSchema(
+                shop_id=data.shop_id,
+                customer_id=customer_id,
+                value_infos=[
+                    {'field_id':id,"value":value}
+                    for id,value in data.custom_fields.items()
+                ]
+            )
+        )
+        ic(cust_obj)
         if res:
             total_credits=data.credit_infos.limit if data.can_have_credit else 0
             total_customers=1
@@ -64,6 +82,40 @@ class CustomerService:
                 changes=[{"field": "name", "before": "", "after": str(customer_name)}]
             )
 
+            try:
+                from messaging.main import RabbitMQMessagingConfig
+                rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                
+                analytics_payload = {
+                    "shop_id": data.shop_id,
+                    "datas": [
+                        {
+                            "customer_id": customer_id,
+                            "credit_limit": total_credits,
+                            "outstanding_amounts": 0,
+                            "cleared_amounts": 0
+                        }
+                    ]
+                }
+                
+                await rabbitmq_msg_obj.publish_event(
+                    routing_key="analytics.service.routing.key",
+                    exchange_name="analytics.service.exchange",
+                    payload=analytics_payload,
+                    headers={
+                        "entity_name": "customer_event",
+                        "service_name": "ANALYTICS",
+                        "saga_id": "none",
+                        "reply_key": "none",
+                        "reply_exchange": "none",
+                        "reply_entity_name": "none",
+                        "body": analytics_payload
+                    }
+                )
+            except Exception as e:
+                ic(f"Failed to publish analytics event: {e}")
+
+
         return res
     
 
@@ -84,8 +136,20 @@ class CustomerService:
         res=await self.customer_repo_obj.update(data=final_data)
         ic(res)
 
+
         # For read Db
         if res:
+            cust_obj=await CustomFieldsService(session=self.session).upsert_values(
+            data=CreateCustomFieldValueSchema(
+                    shop_id=data.shop_id,
+                    customer_id=data.id,
+                    value_infos=[
+                        {'field_id':id,"value":value}
+                        for id,value in data.custom_fields.items()
+                    ]
+                )
+            )
+            ic(cust_obj)
             total_credits=abs(data.credit_infos.limit - cust_get_res['credit_infos']['limit']) if data.can_have_credit else -cust_get_res['credit_infos']['limit']
             ic(total_credits)
             if data.can_have_credit and (data.credit_infos.limit<cust_get_res['credit_infos']['limit']):

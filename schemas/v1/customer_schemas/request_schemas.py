@@ -25,7 +25,7 @@ class UpdateCustomerSchema(BaseModel):
     credit_infos:Optional[CustomerCreditInfosType]=None
     location_infos:Optional[CustomerLocationInfosType]=None
     can_have_credit:Optional[bool]
-    custom_fields:Optional[dict]={}
+    custom_fields:Optional[dict]=None
 
 
 class DeleteCustomerSchema(BaseModel):
