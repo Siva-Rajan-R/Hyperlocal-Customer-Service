@@ -8,7 +8,7 @@ from schemas.v1.request_schemas.customfield_schema import (
 )
 from api.handlers.customfield_handler import CustomFieldsHandler
 
-router = APIRouter(prefix="/custom-fields", tags=["Custom Fields"])
+router = APIRouter(prefix="/customers/custom-fields", tags=["Custom Fields"])
 
 PG_ASYNC_SESSION=Annotated[AsyncSession,Depends(get_pg_async_session)]
 

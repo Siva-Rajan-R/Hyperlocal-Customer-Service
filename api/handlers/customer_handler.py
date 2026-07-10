@@ -42,10 +42,10 @@ class HandleCustomerRequest:
                     success=False
                 )
             )
-        
-        credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
-        if not data.can_have_credit:
-            credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
+        credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
+        if data.credit_infos:
+            credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
+            
 
         # for customfield validations   
         defined_fields = await CustomFieldsService(session=self.session).get_field_by_shop_id(data=GetFieldByShopIdSchema(shop_id=data.shop_id))
@@ -100,9 +100,9 @@ class HandleCustomerRequest:
                 )
             )
         
-        credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
-        if not data.can_have_credit:
-            credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
+        credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
+        if data.can_have_credit:
+            credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
         
         if data.custom_fields:
             defined_fields = await CustomFieldsService(session=self.session).get_field_by_shop_id(data=GetFieldByShopIdSchema(shop_id=data.shop_id))
