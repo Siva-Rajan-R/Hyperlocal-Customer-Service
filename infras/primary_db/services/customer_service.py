@@ -21,7 +21,6 @@ from icecream import ic
 import httpx
 from integrations.utility_service import get_ui_id, get_shop_category, get_shop_unit
 
-from hyperlocal_platform.core.utils.activity_logger import ActivityLogger
 
 
 
