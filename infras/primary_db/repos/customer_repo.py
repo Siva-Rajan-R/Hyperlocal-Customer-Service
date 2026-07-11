@@ -78,7 +78,8 @@ class CustomerRepo:
                 Customers.shop_id==data.shop_id
             )
         ).values(
-            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True,exclude=['id','shop_id'])
+            credit_infos=data.credit_infos.model_dump(mode="json"),
+            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True,exclude=['id','shop_id','credit_infos'])
         ).returning(*self.customer_cols)
 
         res=(await self.session.execute(stmt)).mappings().one_or_none()

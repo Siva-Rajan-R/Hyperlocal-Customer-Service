@@ -1,4 +1,4 @@
-from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema
+from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema,CustomerUpdateCreditInfosType
 from schemas.v1.customer_schemas.custom_types import CustomerCreditInfosType
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -100,14 +100,13 @@ class HandleCustomerRequest:
                 )
             )
         
-        credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
+        credit_infos=CustomerUpdateCreditInfosType(limit=0,notes=None,terms=None,type="increment".upper())
         if data.can_have_credit:
-            credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
+            credit_infos=CustomerUpdateCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms,type=data.credit_infos.type)
         
-        if data.custom_fields:
-            defined_fields = await CustomFieldsService(session=self.session).get_field_by_shop_id(data=GetFieldByShopIdSchema(shop_id=data.shop_id))
-            valid_custom_fields = validate_and_filter_custom_fields(payload_custom_fields=data.custom_fields, defined_custom_fields=defined_fields)
-            ic(valid_custom_fields)
+        defined_fields = await CustomFieldsService(session=self.session).get_field_by_shop_id(data=GetFieldByShopIdSchema(shop_id=data.shop_id))
+        valid_custom_fields = validate_and_filter_custom_fields(payload_custom_fields=data.custom_fields, defined_custom_fields=defined_fields)
+        ic(valid_custom_fields)
 
 
         final_data=UpdateCustomerSchema(credit_infos=credit_infos,custom_fields=valid_custom_fields,**data.model_dump(exclude=['credit_infos',"custom_fields"]))

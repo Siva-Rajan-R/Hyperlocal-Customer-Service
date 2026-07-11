@@ -3,7 +3,9 @@ from typing import Optional,Dict,List
 from core.data_formats.typ_dicts.customer_typdict import CustomerAddressTypDict
 from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerOutstandingAddEnums,CustomerOutstandingClearedPaymentMethods,PaymentMethodsEnums
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
-from .custom_types import CustomerContactInfosType,CustomerCreditInfosType,CustomerLocationInfosType,CustomerOutstandingInfosType,CustomerClearedInfosType,CustomerPaymentInfosType
+from .custom_types import CustomerContactInfosType,CustomerCreditInfosType,CustomerLocationInfosType,CustomerOutstandingInfosType,CustomerClearedInfosType,CustomerPaymentInfosType,CustomerUpdateCreditInfosType
+
+
 
 
 # Writable Schemas
@@ -22,7 +24,7 @@ class UpdateCustomerSchema(BaseModel):
     shop_id:str
     name:Optional[str]=None
     contact_infos:Optional[CustomerContactInfosType]=None
-    credit_infos:Optional[CustomerCreditInfosType]=None
+    credit_infos:Optional[CustomerUpdateCreditInfosType]=None
     location_infos:Optional[CustomerLocationInfosType]=None
     can_have_credit:Optional[bool]
     custom_fields:Optional[dict]=None

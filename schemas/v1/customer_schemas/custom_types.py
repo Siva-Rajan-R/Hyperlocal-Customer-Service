@@ -1,6 +1,7 @@
 from pydantic import BaseModel,EmailStr,Field
 from typing import Optional,List,Dict
 from core.data_formats.enums.customer_enums import CustomerPaymentTermsEnums,PaymentMethodsEnums
+from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerOutstandingAddEnums,CustomerOutstandingClearedPaymentMethods,PaymentMethodsEnums
 
 
 class CustomerContactInfosType(BaseModel):
@@ -9,6 +10,12 @@ class CustomerContactInfosType(BaseModel):
 
 class CustomerCreditInfosType(BaseModel):
     limit:float
+    notes:Optional[str]=None
+    terms:Optional[CustomerPaymentTermsEnums]=None
+
+class CustomerUpdateCreditInfosType(BaseModel):
+    limit:float
+    type:CustomerOutstandingAddEnums
     notes:Optional[str]=None
     terms:Optional[CustomerPaymentTermsEnums]=None
 

@@ -3,7 +3,7 @@ from ..repos.customer_repo import CustomerRepo
 from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema
 from schemas.v1.customer_schemas.db_schemas import CreateCustomerDbSchema,UpdateCustomerDbSchema,DeleteCustomerDbSchema,CreateCustomerOutstandingClearedDbSchema,CreateCustomerOutstandingDbSchema
 from schemas.v1.customer_schemas.custom_types import CustomerOutstandingInfosType,CustomerClearedInfosType,CustomerCreditInfosType
-
+from sqlalchemy import select
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 from fastapi.exceptions import HTTPException
@@ -75,11 +75,11 @@ class CustomerService:
             await ActivityLogger.log(
                 shop_id=data.shop_id,
                 service="Customer",
-                action="CREATE",
+                action="CREATED",
                 entity_type="Customer",
                 entity_id=customer_id,
-                description=f"Created new customer: {customer_name}",
-                changes=[{"field": "name", "before": "", "after": str(customer_name)}]
+                description=f"Created new customer: {customer_id}",
+                changes=[{"field": "id", "before": "none", "after": str(customer_id)}]
             )
 
             try:
@@ -120,16 +120,33 @@ class CustomerService:
     
 
     async def update(self,data:UpdateCustomerSchema) -> dict | None:
+
         cust_get_res=await self.get_customer_by_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id))
+
         ic(cust_get_res)
         if not cust_get_res:
             ic("The given customer doesn't exists")
             return False
         
         
-        credit_infos=CustomerCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms)
+        temp_credit_infos={
+            'limit':data.credit_infos.limit,
+            'notes':data.credit_infos.notes,
+            'terms':data.credit_infos.terms
+        }
         if not data.can_have_credit:
-            credit_infos=CustomerCreditInfosType(limit=0,notes=None,terms=None)
+            temp_credit_infos['limit']=0
+            temp_credit_infos["notes"]=None
+            temp_credit_infos['terms']=None
+
+        
+        if data.credit_infos.type==CustomerOutstandingAddEnums.INCREMENT:
+            limit=limit=cust_get_res['credit_infos']['limit']+temp_credit_infos["limit"]
+            credit_infos=CustomerCreditInfosType(limit=limit,notes=temp_credit_infos['notes'],terms=temp_credit_infos['terms'])
+        elif data.credit_infos.type==CustomerOutstandingAddEnums.DECREMENT:
+            limit=limit=cust_get_res['credit_infos']['limit']-temp_credit_infos["limit"]
+            credit_infos=CustomerCreditInfosType(limit=limit,notes=temp_credit_infos['notes'],terms=temp_credit_infos['terms'])
+
 
         final_data=UpdateCustomerDbSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos']))
 
@@ -140,55 +157,68 @@ class CustomerService:
         # For read Db
         if res:
             cust_obj=await CustomFieldsService(session=self.session).upsert_values(
-            data=CreateCustomFieldValueSchema(
-                    shop_id=data.shop_id,
-                    customer_id=data.id,
-                    value_infos=[
-                        {'field_id':id,"value":value}
-                        for id,value in data.custom_fields.items()
-                    ]
-                )
+                data=CreateCustomFieldValueSchema(
+                        shop_id=data.shop_id,
+                        customer_id=data.id,
+                        value_infos=[
+                            {'field_id':id,"value":value}
+                            for id,value in data.custom_fields.items()
+                        ]
+                    )
             )
             ic(cust_obj)
-            total_credits=abs(data.credit_infos.limit - cust_get_res['credit_infos']['limit']) if data.can_have_credit else -cust_get_res['credit_infos']['limit']
-            ic(total_credits)
-            if data.can_have_credit and (data.credit_infos.limit<cust_get_res['credit_infos']['limit']):
-                total_credits=-total_credits
-            total_customers=0
-            total_customer_with_credit=0 
-            if(data.can_have_credit!=cust_get_res['can_have_credit'] and data.can_have_credit):
-                total_customer_with_credit=1
-            elif (data.can_have_credit!=cust_get_res['can_have_credit'] and not data.can_have_credit):
-                total_customer_with_credit=-1
-            else:
-                total_customer_with_credit=0
-
-            total_outstanding=0
-
-            ic(total_credits,total_customers,total_customer_with_credit,total_outstanding)
-            stats_data=CustomerStatsSchema(
-                total_credits=total_credits,
-                total_customers=total_customers,
-                total_customer_with_credit=total_customer_with_credit,
-                total_outstanding=total_outstanding
-            )
-
-            await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
-
-            changes_list = ActivityLogger.compute_changes(cust_get_res, data.model_dump(exclude_none=True, exclude_unset=True))
-            if changes_list:
-                desc_changes = [f"{c['field']} prv({c['before']}) after ({c['after']})" for c in changes_list]
-                desc = f"updated customer {', '.join(desc_changes)}"
-                await ActivityLogger.log(
-                    shop_id=data.shop_id,
-                    service="Customer",
-                    action="UPDATE",
-                    entity_type="Customer",
-                    entity_id=data.id,
-                    description=desc,
-                    changes=changes_list
+            try:
+                from messaging.main import RabbitMQMessagingConfig
+                rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                await rabbitmq_msg_obj.publish_event(
+                    routing_key="activity_logs.routing.key",
+                    exchange_name="activity_logs.exchange",
+                    payload={
+                        "shop_id": data.shop_id,
+                        "user_name": "Hyperlocal-User",
+                        "service": "Customer",
+                        "action": "UPDATED",
+                        "entity_type": "Customer",
+                        "entity_id": data.id,
+                        "description": f"Updated Customer {data.id}",
+                        "changes": [{"field": "id", "before": str(data.id), "after": "UPDATED"}]
+                    },
+                    headers={}
                 )
 
+                # Send delta analytics event
+                old_credit_limit = cust_get_res.get('credit_infos', {}).get('limit', 0.0) if cust_get_res.get('credit_infos') else 0.0
+                new_credit_limit = limit
+                delta_credit_limit = new_credit_limit - old_credit_limit
+                
+                analytics_payload = {
+                    "shop_id": data.shop_id,
+                    "action": "update",
+                    "datas": [
+                        {
+                            "customer_id": data.id,
+                            "credit_limit": float(delta_credit_limit),
+                            "outstanding_amounts": 0.0,
+                            "cleared_amounts": 0.0
+                        }
+                    ]
+                }
+                await rabbitmq_msg_obj.publish_event(
+                    routing_key="analytics.service.routing.key",
+                    exchange_name="analytics.service.exchange",
+                    payload=analytics_payload,
+                    headers={
+                        "entity_name": "customer_event",
+                        "service_name": "ANALYTICS",
+                        "saga_id": "none",
+                        "reply_key": "none",
+                        "reply_exchange": "none",
+                        "reply_entity_name": "none",
+                        "body": analytics_payload
+                    }
+                )
+            except Exception as e:
+                ic(f"Failed to publish events: {e}")
         return res
     
     async def delete(self,data:DeleteCustomerSchema) -> dict | None:
@@ -215,12 +245,45 @@ class CustomerService:
             await ActivityLogger.log(
                 shop_id=data.shop_id,
                 service="Customer",
-                action="DELETE",
+                action="DELETED",
                 entity_type="Customer",
                 entity_id=data.id,
-                description=f"Deleted customer: {customer_name}",
-                changes=[{"field": "name", "before": str(customer_name), "after": "DELETED"}]
+                description=f"Deleted customer: {data.id}",
+                changes=[{"field": "name", "before": str(data.id), "after": "DELETED"}]
             )
+
+            try:
+                from messaging.main import RabbitMQMessagingConfig
+                rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                
+                analytics_payload = {
+                    "shop_id": data.shop_id,
+                    "action": "delete",
+                    "datas": [
+                        {
+                            "customer_id": data.id,
+                            "credit_limit": -float(res['credit_infos']['limit']) if res.get('credit_infos') else 0.0,
+                            "outstanding_amounts": -float(res['outstanding_infos']['amount']) if res.get('outstanding_infos') else 0.0,
+                            "cleared_amounts": 0.0
+                        }
+                    ]
+                }
+                await rabbitmq_msg_obj.publish_event(
+                    routing_key="analytics.service.routing.key",
+                    exchange_name="analytics.service.exchange",
+                    payload=analytics_payload,
+                    headers={
+                        "entity_name": "customer_event",
+                        "service_name": "ANALYTICS",
+                        "saga_id": "none",
+                        "reply_key": "none",
+                        "reply_exchange": "none",
+                        "reply_entity_name": "none",
+                        "body": analytics_payload
+                    }
+                )
+            except Exception as e:
+                ic(f"Failed to publish analytics event on customer delete: {e}")
 
         return res
     
