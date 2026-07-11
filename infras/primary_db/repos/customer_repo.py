@@ -224,11 +224,11 @@ class CustomerRepo:
             )
             .where(
                 CustomerOutstandingClearedHistories.shop_id==data.shop_id,
-                CustomerOutstandingClearedHistories.id==data.id
+                CustomerOutstandingClearedHistories.customer_id==data.id
             )
         )
 
-        res=(await self.session.execute(stmt)).mappings().one_or_none()
+        res=(await self.session.execute(stmt)).mappings().all()
 
         return res
 

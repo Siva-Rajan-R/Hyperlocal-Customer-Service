@@ -246,7 +246,7 @@ class HandleCustomerRequest:
             data=res
         )
     
-    async def get_outst_clr_by_id(self,data:GetCustomerOutstClearedByIdSchema) -> dict | None:
+    async def get_outst_clr_by_id(self,data:GetCustomerOutstClearedByIdSchema) -> List[dict] | None:
         res=await CustomerService(session=self.session).get_outst_clr_by_id(data=data)
         ic(res)
         return SuccessResponseTypDict(

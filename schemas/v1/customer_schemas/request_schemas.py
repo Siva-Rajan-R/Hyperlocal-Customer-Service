@@ -93,5 +93,5 @@ class GetCustomerOutstClearedByShopIdSchema(BaseModel):
 
 
 class GetCustomerOutstClearedByIdSchema(BaseModel):
-    id:int
+    id:str
     shop_id:str
