@@ -71,15 +71,7 @@ class CustomerService:
             await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
             
             customer_name = data.name if hasattr(data, 'name') else 'Unknown'
-            await ActivityLogger.log(
-                shop_id=data.shop_id,
-                service="Customer",
-                action="CREATED",
-                entity_type="Customer",
-                entity_id=customer_id,
-                description=f"Created new customer: {customer_id}",
-                changes=[{"field": "id", "before": "none", "after": str(customer_id)}]
-            )
+
 
             try:
                 from messaging.main import RabbitMQMessagingConfig
@@ -241,15 +233,6 @@ class CustomerService:
             await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
             
             customer_name = res.get('name', 'Unknown')
-            await ActivityLogger.log(
-                shop_id=data.shop_id,
-                service="Customer",
-                action="DELETED",
-                entity_type="Customer",
-                entity_id=data.id,
-                description=f"Deleted customer: {data.id}",
-                changes=[{"field": "name", "before": str(data.id), "after": "DELETED"}]
-            )
 
             try:
                 from messaging.main import RabbitMQMessagingConfig
