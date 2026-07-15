@@ -131,12 +131,17 @@ class CustomerService:
             temp_credit_infos['terms']=None
 
         
-        if data.credit_infos.type==CustomerOutstandingAddEnums.INCREMENT:
-            limit=limit=cust_get_res['credit_infos']['limit']+temp_credit_infos["limit"]
-            credit_infos=CustomerCreditInfosType(limit=limit,notes=temp_credit_infos['notes'],terms=temp_credit_infos['terms'])
-        elif data.credit_infos.type==CustomerOutstandingAddEnums.DECREMENT:
-            limit=limit=cust_get_res['credit_infos']['limit']-temp_credit_infos["limit"]
-            credit_infos=CustomerCreditInfosType(limit=limit,notes=temp_credit_infos['notes'],terms=temp_credit_infos['terms'])
+        credit_infos=CustomerCreditInfosType(limit=0)
+        if data.credit_infos:
+            if data.credit_infos.type==CustomerOutstandingAddEnums.INCREMENT:
+                limit=limit=cust_get_res['credit_infos']['limit']+temp_credit_infos["limit"]
+                credit_infos=CustomerCreditInfosType(limit=limit,notes=temp_credit_infos['notes'],terms=temp_credit_infos['terms'])
+            elif data.credit_infos.type==CustomerOutstandingAddEnums.DECREMENT:
+                limit=limit=cust_get_res['credit_infos']['limit']-temp_credit_infos["limit"]
+                credit_infos=CustomerCreditInfosType(limit=limit,notes=temp_credit_infos['notes'],terms=temp_credit_infos['terms'])
+            elif data.credit_infos.type==CustomerOutstandingAddEnums.DIRECT:
+                credit_infos=CustomerCreditInfosType(**temp_credit_infos)
+
 
 
         final_data=UpdateCustomerDbSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos']))
