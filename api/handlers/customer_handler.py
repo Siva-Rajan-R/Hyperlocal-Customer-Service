@@ -100,7 +100,7 @@ class HandleCustomerRequest:
                 )
             )
         
-        credit_infos=CustomerUpdateCreditInfosType(limit=0,notes=None,terms=None,type="increment".upper())
+        credit_infos=CustomerUpdateCreditInfosType(limit=0,notes=None,terms=None,type="DIRECT")
         if data.can_have_credit:
             credit_infos=CustomerUpdateCreditInfosType(limit=data.credit_infos.limit,notes=data.credit_infos.notes,terms=data.credit_infos.terms,type=data.credit_infos.type)
         
@@ -156,6 +156,16 @@ class HandleCustomerRequest:
     
 
     async def add_outstanding(self,data:CreateCustomerOutstandingSchema) -> dict | None:
+        if data.type=="DECREMENT":
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponseTypDict(
+                    msg="Error : Creating Customer Outstanding",
+                    description=f"Invalid Type {data.type}, Use DIRECT or INCREMENT",
+                    status_code=400,
+                    success=False
+                )
+            )
         res=await CustomerService(session=self.session).add_outstanding(data=data)
         ic(res)
         return SuccessResponseTypDict(

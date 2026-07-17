@@ -33,6 +33,34 @@ class CustomerService:
 
     # Writables
     async def create(self,data:CreateCustomerSchema) -> dict | None:
+        # Check if customer already exists with the same mobile_number or email in this shop
+        from sqlalchemy import or_
+        email = data.contact_infos.email
+        mobile_number = data.contact_infos.mobile_number
+        
+        conditions = []
+        if email:
+            conditions.append(Customers.contact_infos['email'].astext == email)
+        if mobile_number:
+            conditions.append(Customers.contact_infos['mobile_number'].astext == mobile_number)
+            
+        if conditions:
+            stmt = select(Customers).where(
+                Customers.shop_id == data.shop_id,
+                or_(*conditions)
+            )
+            existing_cust = (await self.session.execute(stmt)).scalars().first()
+            if existing_cust:
+                raise HTTPException(
+                    status_code=400,
+                    detail=ErrorResponseTypDict(
+                        msg="Error : Creating Customer",
+                        description="Customer with this email or mobile number already exists in this shop",
+                        success=False,
+                        status_code=400
+                    )
+                )
+
         customer_id:str=generate_uuid()
         ui_id_res = await get_ui_id(shop_id=data.shop_id)
         if isinstance(ui_id_res, dict) and "prefix" in ui_id_res:
@@ -315,7 +343,7 @@ class CustomerService:
     async def clear_outstanding(self,data:CreateCustomerOutstandingClearedSchema) -> dict | None:
         outst_clr_id=generate_uuid()
         # STEP-1 CHECKING THE CUSTOMER EXISTANCE FOR GETTTING PREVIOUS VALUES
-        cust_get_res=await self.get_customer_by_id(data=GetCustomerByIdSchema(id=data.customer_id,shop_id=data.shop_id))
+        cust_get_res=await self.get_customer_by_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id))
         if not cust_get_res:
             ic("The given customer doesn't exists")
             return False
@@ -342,10 +370,15 @@ class CustomerService:
         )
 
         # STEP-3 UPDAING ON THE DB
-        final_data=CreateCustomerOutstandingClearedDbSchema(cleared_infos=cleared_infos,**data.model_dump())
+        final_data=CreateCustomerOutstandingClearedDbSchema(
+            shop_id=data.shop_id,
+            customer_id=data.id,
+            payment_infos=data.payment_infos,
+            cleared_infos=cleared_infos
+        )
         outstanding_infos=CustomerOutstandingInfosType(amount=cur_outst_amt)
         # STEP-3 (STEP-1) UPDATE THE CUSTOMER OUTSTANDING 
-        cust_upd_res=await self.add_outstanding(data=CreateCustomerOutstandingSchema(id=data.customer_id,shop_id=data.shop_id,outstanding_infos=outstanding_infos,type=CustomerOutstandingAddEnums.DIRECT))
+        cust_upd_res=await self.add_outstanding(data=CreateCustomerOutstandingSchema(id=data.id,shop_id=data.shop_id,outstanding_infos=outstanding_infos,type=CustomerOutstandingAddEnums.DIRECT))
         ic(cust_upd_res)
         if not cust_upd_res:
             ic("Error Updating the customer outstanding")

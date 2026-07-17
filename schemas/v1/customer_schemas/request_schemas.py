@@ -26,7 +26,7 @@ class UpdateCustomerSchema(BaseModel):
     contact_infos:Optional[CustomerContactInfosType]=None
     credit_infos:Optional[CustomerUpdateCreditInfosType]=None
     location_infos:Optional[CustomerLocationInfosType]=None
-    can_have_credit:Optional[bool]
+    can_have_credit:bool
     custom_fields:Optional[dict]=None
 
 
@@ -46,7 +46,7 @@ class CreateCustomerOutstandingSchema(BaseModel):
 
 class CreateCustomerOutstandingClearedSchema(BaseModel):
     shop_id:str
-    customer_id:str
+    id:str
     payment_infos:List[CustomerPaymentInfosType]
 
 
