@@ -98,23 +98,34 @@ class CustomerService:
 
             await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
             
-            customer_name = data.name if hasattr(data, 'name') else 'Unknown'
-
+            customer_name = data.name if hasattr(data, 'name') else 'Customer'
 
             try:
                 from messaging.main import RabbitMQMessagingConfig
                 rabbitmq_msg_obj = RabbitMQMessagingConfig()
                 
+                await rabbitmq_msg_obj.publish_event(
+                    routing_key="activity_logs.routing.key",
+                    exchange_name="activity_logs.exchange",
+                    payload={
+                        "shop_id": data.shop_id,
+                        "user_name": "Hyperlocal-User",
+                        "service": "Customer",
+                        "action": "CREATED",
+                        "entity_type": "CUSTOMER",
+                        "entity_id": str(customer_id),
+                        "entity_name": str(customer_name),
+                        "description": f"Created Customer {customer_name} ({customer_id})",
+                        "changes": []
+                    },
+                    headers={}
+                )
+
                 analytics_payload = {
                     "shop_id": data.shop_id,
-                    "datas": [
-                        {
-                            "customer_id": customer_id,
-                            "credit_limit": total_credits,
-                            "outstanding_amounts": 0,
-                            "cleared_amounts": 0
-                        }
-                    ]
+                    "entity_name": "CUSTOMER",
+                    "entity_id": str(customer_id),
+                    "action": "CREATE"
                 }
                 
                 await rabbitmq_msg_obj.publish_event(
@@ -132,7 +143,7 @@ class CustomerService:
                     }
                 )
             except Exception as e:
-                ic(f"Failed to publish analytics event: {e}")
+                ic(f"Failed to publish events: {e}")
 
 
         return res
@@ -194,6 +205,30 @@ class CustomerService:
             try:
                 from messaging.main import RabbitMQMessagingConfig
                 rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                
+                # Build exact changes diff using exclude_unset=True, exclude_none=True
+                def _is_empty_or_none(val):
+                    if val is None: return True
+                    if isinstance(val, (dict, list, set, str, tuple)) and len(val) == 0: return True
+                    return str(val).strip() in ("None", "{}", "[]", "", "null", "NoneType")
+
+                dumped_updates = data.model_dump(exclude_unset=True, exclude_none=True)
+                changes = []
+                for key, new_val in dumped_updates.items():
+                    if key in ["id", "shop_id", "user_id", "cur_user_id"]:
+                        continue
+                    prev_val = cust_get_res.get(key)
+                    if _is_empty_or_none(prev_val) and _is_empty_or_none(new_val):
+                        continue
+                    if prev_val != new_val and str(prev_val).strip() != str(new_val).strip():
+                        changes.append({
+                            "field": key,
+                            "before": str(prev_val) if prev_val is not None else "None",
+                            "after": str(new_val) if new_val is not None else "None"
+                        })
+                
+                cust_name = cust_get_res.get('name') or getattr(data, 'name', None) or 'Customer'
+
                 await rabbitmq_msg_obj.publish_event(
                     routing_key="activity_logs.routing.key",
                     exchange_name="activity_logs.exchange",
@@ -202,10 +237,11 @@ class CustomerService:
                         "user_name": "Hyperlocal-User",
                         "service": "Customer",
                         "action": "UPDATED",
-                        "entity_type": "Customer",
-                        "entity_id": data.id,
-                        "description": f"Updated Customer {data.id}",
-                        "changes": [{"field": "id", "before": str(data.id), "after": "UPDATED"}]
+                        "entity_type": "CUSTOMER",
+                        "entity_id": str(data.id),
+                        "entity_name": str(cust_name),
+                        "description": f"Updated Customer {cust_name} ({data.id})",
+                        "changes": changes
                     },
                     headers={}
                 )
@@ -217,15 +253,9 @@ class CustomerService:
                 
                 analytics_payload = {
                     "shop_id": data.shop_id,
-                    "action": "update",
-                    "datas": [
-                        {
-                            "customer_id": data.id,
-                            "credit_limit": float(delta_credit_limit),
-                            "outstanding_amounts": 0.0,
-                            "cleared_amounts": 0.0
-                        }
-                    ]
+                    "entity_name": "CUSTOMER",
+                    "entity_id": str(data.id),
+                    "action": "UPDATE"
                 }
                 await rabbitmq_msg_obj.publish_event(
                     routing_key="analytics.service.routing.key",
@@ -265,23 +295,34 @@ class CustomerService:
 
             await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
             
-            customer_name = res.get('name', 'Unknown')
+            customer_name = res.get('name', 'Customer')
 
             try:
                 from messaging.main import RabbitMQMessagingConfig
                 rabbitmq_msg_obj = RabbitMQMessagingConfig()
+
+                await rabbitmq_msg_obj.publish_event(
+                    routing_key="activity_logs.routing.key",
+                    exchange_name="activity_logs.exchange",
+                    payload={
+                        "shop_id": data.shop_id,
+                        "user_name": "Hyperlocal-User",
+                        "service": "Customer",
+                        "action": "DELETED",
+                        "entity_type": "CUSTOMER",
+                        "entity_id": str(data.id),
+                        "entity_name": str(customer_name),
+                        "description": f"Deleted Customer {customer_name} ({data.id})",
+                        "changes": []
+                    },
+                    headers={}
+                )
                 
                 analytics_payload = {
                     "shop_id": data.shop_id,
-                    "action": "delete",
-                    "datas": [
-                        {
-                            "customer_id": data.id,
-                            "credit_limit": -float(res['credit_infos']['limit']) if res.get('credit_infos') else 0.0,
-                            "outstanding_amounts": -float(res['outstanding_infos']['amount']) if res.get('outstanding_infos') else 0.0,
-                            "cleared_amounts": 0.0
-                        }
-                    ]
+                    "entity_name": "CUSTOMER",
+                    "entity_id": str(data.id),
+                    "action": "DELETE"
                 }
                 await rabbitmq_msg_obj.publish_event(
                     routing_key="analytics.service.routing.key",
@@ -336,6 +377,32 @@ class CustomerService:
             )
 
             await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+
+            try:
+                from messaging.main import RabbitMQMessagingConfig
+                rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                analytics_payload = {
+                    "shop_id": data.shop_id,
+                    "entity_name": "CUSTOMER",
+                    "entity_id": str(data.id),
+                    "action": "UPDATE"
+                }
+                await rabbitmq_msg_obj.publish_event(
+                    routing_key="analytics.service.routing.key",
+                    exchange_name="analytics.service.exchange",
+                    payload=analytics_payload,
+                    headers={
+                        "entity_name": "customer_event",
+                        "service_name": "ANALYTICS",
+                        "saga_id": "none",
+                        "reply_key": "none",
+                        "reply_exchange": "none",
+                        "reply_entity_name": "none",
+                        "body": analytics_payload
+                    }
+                )
+            except Exception as e:
+                ic(f"Failed to publish analytics event on customer add outstanding: {e}")
 
         return res
     
@@ -403,6 +470,32 @@ class CustomerService:
             )
 
             await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+
+            try:
+                from messaging.main import RabbitMQMessagingConfig
+                rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                analytics_payload = {
+                    "shop_id": data.shop_id,
+                    "entity_name": "CUSTOMER",
+                    "entity_id": str(data.id),
+                    "action": "UPDATE"
+                }
+                await rabbitmq_msg_obj.publish_event(
+                    routing_key="analytics.service.routing.key",
+                    exchange_name="analytics.service.exchange",
+                    payload=analytics_payload,
+                    headers={
+                        "entity_name": "customer_event",
+                        "service_name": "ANALYTICS",
+                        "saga_id": "none",
+                        "reply_key": "none",
+                        "reply_exchange": "none",
+                        "reply_entity_name": "none",
+                        "body": analytics_payload
+                    }
+                )
+            except Exception as e:
+                ic(f"Failed to publish analytics event on customer clear outstanding: {e}")
             
         return outst_clr_res
     

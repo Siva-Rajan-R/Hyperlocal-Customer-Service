@@ -137,35 +137,97 @@ class CustomerRepo:
     
 
     async def get(self,data:GetAllCustomerSchema) -> List[dict] | list:
-        search_term=f"%{data.query}%"
         cursor=(data.offset-1)*data.limit
+        conds = []
+        if data.query:
+            search_term = f"%{data.query}%"
+            conds.append(or_(
+                Customers.id.ilike(search_term),
+                Customers.ui_id.ilike(search_term),
+                Customers.name.ilike(search_term),
+                Customers.contact_infos['mobile_number'].astext.ilike(search_term),
+                Customers.contact_infos['email'].astext.ilike(search_term)
+            ))
+        if getattr(data, 'from_date', None):
+            try:
+                from_dt = datetime.strptime(data.from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                conds.append(Customers.created_at >= from_dt)
+            except Exception:
+                pass
+        if getattr(data, 'to_date', None):
+            try:
+                to_date_str = data.to_date
+                if len(to_date_str) <= 10:
+                    to_date_str += ' 23:59:59'
+                to_dt = datetime.strptime(to_date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                conds.append(Customers.created_at <= to_dt)
+            except Exception:
+                pass
+        if getattr(data, 'has_outstanding', None) is not None:
+            from sqlalchemy import Float
+            amount_expr = func.cast(Customers.outstanding_infos['amount'].astext, Float)
+            if data.has_outstanding:
+                conds.append(and_(Customers.outstanding_infos != None, amount_expr > 0.0))
+            else:
+                conds.append(or_(Customers.outstanding_infos == None, amount_expr <= 0.0))
+
         stmt=(
             select(
                 *self.customer_cols
             )
-            .offset(offset=cursor).limit(limit=data.limit)
         )
-
+        if conds:
+            stmt = stmt.where(and_(*conds))
+        
+        stmt = stmt.offset(offset=cursor).limit(limit=data.limit)
         res=(await self.session.execute(stmt)).mappings().all()
-
         return res
     
 
     async def getby_shop_id(self,data:GetCustomerByShopIdSchema) -> List[dict] | list:
-        search_term=f"%{data.query}%"
         cursor=(data.offset-1)*data.limit
+        conds = [Customers.shop_id==data.shop_id]
+        if data.query:
+            search_term = f"%{data.query}%"
+            conds.append(or_(
+                Customers.id.ilike(search_term),
+                Customers.ui_id.ilike(search_term),
+                Customers.name.ilike(search_term),
+                Customers.contact_infos['mobile_number'].astext.ilike(search_term),
+                Customers.contact_infos['email'].astext.ilike(search_term)
+            ))
+        if getattr(data, 'from_date', None):
+            try:
+                from_dt = datetime.strptime(data.from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                conds.append(Customers.created_at >= from_dt)
+            except Exception:
+                pass
+        if getattr(data, 'to_date', None):
+            try:
+                to_date_str = data.to_date
+                if len(to_date_str) <= 10:
+                    to_date_str += ' 23:59:59'
+                to_dt = datetime.strptime(to_date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                conds.append(Customers.created_at <= to_dt)
+            except Exception:
+                pass
+        if getattr(data, 'has_outstanding', None) is not None:
+            from sqlalchemy import Float
+            amount_expr = func.cast(Customers.outstanding_infos['amount'].astext, Float)
+            if data.has_outstanding:
+                conds.append(and_(Customers.outstanding_infos != None, amount_expr > 0.0))
+            else:
+                conds.append(or_(Customers.outstanding_infos == None, amount_expr <= 0.0))
+
         stmt=(
             select(
                 *self.customer_cols
             )
-            .where(
-                Customers.shop_id==data.shop_id
-            )
+            .where(and_(*conds))
             .offset(offset=cursor).limit(limit=data.limit)
         )
 
         res=(await self.session.execute(stmt)).mappings().all()
-
         return res
     
     async def getby_id(self,data:GetCustomerByIdSchema) -> List[dict] | list:
@@ -180,40 +242,81 @@ class CustomerRepo:
         )
 
         res=(await self.session.execute(stmt)).mappings().one_or_none()
-
         return res
     
 
     async def get_outst_cleared(self,data:GetAllCustomerOutstClearedSchema):
-        search_term=f"%{data.query}%"
         cursor=(data.offset-1)*data.limit
+        conds = []
+        if data.query:
+            search_term = f"%{data.query}%"
+            conds.append(or_(
+                CustomerOutstandingClearedHistories.customer_id.ilike(search_term),
+                func.cast(CustomerOutstandingClearedHistories.id, String).ilike(search_term)
+            ))
+        if getattr(data, 'from_date', None):
+            try:
+                from_dt = datetime.strptime(data.from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                conds.append(CustomerOutstandingClearedHistories.created_at >= from_dt)
+            except Exception:
+                pass
+        if getattr(data, 'to_date', None):
+            try:
+                to_date_str = data.to_date
+                if len(to_date_str) <= 10:
+                    to_date_str += ' 23:59:59'
+                to_dt = datetime.strptime(to_date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                conds.append(CustomerOutstandingClearedHistories.created_at <= to_dt)
+            except Exception:
+                pass
+
         stmt=(
             select(
                 *self.customer_cleared_his_cols
             )
-            .offset(offset=cursor).limit(limit=data.limit)
         )
-
+        if conds:
+            stmt = stmt.where(and_(*conds))
+        
+        stmt = stmt.offset(offset=cursor).limit(limit=data.limit)
         res=(await self.session.execute(stmt)).mappings().all()
-
         return res
     
 
     async def get_outst_cleared_by_shop_id(self,data:GetCustomerOutstClearedByShopIdSchema):
-        search_term=f"%{data.query}%"
         cursor=(data.offset-1)*data.limit
+        conds = [CustomerOutstandingClearedHistories.shop_id==data.shop_id]
+        if data.query:
+            search_term = f"%{data.query}%"
+            conds.append(or_(
+                CustomerOutstandingClearedHistories.customer_id.ilike(search_term),
+                func.cast(CustomerOutstandingClearedHistories.id, String).ilike(search_term)
+            ))
+        if getattr(data, 'from_date', None):
+            try:
+                from_dt = datetime.strptime(data.from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                conds.append(CustomerOutstandingClearedHistories.created_at >= from_dt)
+            except Exception:
+                pass
+        if getattr(data, 'to_date', None):
+            try:
+                to_date_str = data.to_date
+                if len(to_date_str) <= 10:
+                    to_date_str += ' 23:59:59'
+                to_dt = datetime.strptime(to_date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                conds.append(CustomerOutstandingClearedHistories.created_at <= to_dt)
+            except Exception:
+                pass
+
         stmt=(
             select(
                 *self.customer_cleared_his_cols
             )
-            .where(
-                CustomerOutstandingClearedHistories.shop_id==data.shop_id
-            )
+            .where(and_(*conds))
             .offset(offset=cursor).limit(limit=data.limit)
         )
 
         res=(await self.session.execute(stmt)).mappings().all()
-
         return res
     
 

@@ -58,6 +58,7 @@ class GetAllCustomerSchema(BaseModel):
     offset:int=Field(default=1)
     from_date:Optional[str]=None
     to_date:Optional[str]=None
+    has_outstanding:Optional[bool]=None
 
 
 class GetCustomerByShopIdSchema(BaseModel):
@@ -67,6 +68,7 @@ class GetCustomerByShopIdSchema(BaseModel):
     offset:int=Field(default=1)
     from_date:Optional[str]=None
     to_date:Optional[str]=None
+    has_outstanding:Optional[bool]=None
 
 
 class GetCustomerByIdSchema(BaseModel):
