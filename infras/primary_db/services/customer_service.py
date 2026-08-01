@@ -2,7 +2,7 @@ from ..main import AsyncSession
 from ..repos.customer_repo import CustomerRepo
 from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema
 from schemas.v1.customer_schemas.db_schemas import CreateCustomerDbSchema,UpdateCustomerDbSchema,DeleteCustomerDbSchema,CreateCustomerOutstandingClearedDbSchema,CreateCustomerOutstandingDbSchema
-from schemas.v1.customer_schemas.custom_types import CustomerOutstandingInfosType,CustomerClearedInfosType,CustomerCreditInfosType
+from schemas.v1.customer_schemas.custom_types import CustomerOutstandingInfosType,CustomerClearedInfosType,CustomerCreditInfosType,CustomerPaymentInfosType
 from sqlalchemy import select
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
@@ -343,8 +343,10 @@ class CustomerService:
 
         return res
     
+    @start_db_transaction
     async def add_outstanding(self,data:CreateCustomerOutstandingSchema) -> dict | None:
         cur_outst_amt=data.outstanding_infos.amount
+        prev_outst_amt=0.0
         # STEP-1 CHECKING THE TYPE IF INCREMENT MEANS NEED TO DO CUSTOMER EXISTANCE FOR GETTTING PREVIOUS VALUES
         if data.type!=CustomerOutstandingAddEnums.DIRECT:
             cust_get_res=await self.get_customer_by_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id))
@@ -358,11 +360,60 @@ class CustomerService:
                 ic("Credit amount should not be goes into negative")
                 return False
         outstanding_infos=CustomerOutstandingInfosType(amount=cur_outst_amt)
-        final_data=CreateCustomerOutstandingDbSchema(outstanding_infos=outstanding_infos,**data.model_dump(exclude=['outstanding_infos']))
+        exclude_fields = ['outstanding_infos', 'payment_infos', 'cleared_amount', 'total_amount', 'entity_name', 'entity_id', 'payment_method', 'notes']
+        final_data=CreateCustomerOutstandingDbSchema(outstanding_infos=outstanding_infos,**data.model_dump(exclude=exclude_fields, exclude_none=True))
         res=await self.customer_repo_obj.add_outstanding(data=final_data)
         ic(res)
 
         if res:
+            # If initial payment or entity_name/id or history metadata is passed, record history entry!
+            initial_paid = data.cleared_amount if data.cleared_amount is not None else 0.0
+            if not initial_paid and data.payment_infos:
+                initial_paid = sum(p.get("amount", 0.0) if isinstance(p, dict) else getattr(p, "amount", 0.0) for p in data.payment_infos)
+
+            if data.entity_name or data.entity_id or initial_paid > 0 or data.payment_infos or data.total_amount:
+                try:
+                    cleared_infos = CustomerClearedInfosType(
+                        outstanding_before=float(prev_outst_amt),
+                        outstanding_after=float(cur_outst_amt)
+                    )
+                    pay_infos_list = []
+                    valid_methods = {"UPI", "CASH", "CARD", "BANK"}
+                    if data.payment_infos:
+                        for p in data.payment_infos:
+                            m_raw = p.get("mode") or p.get("method") if isinstance(p, dict) else getattr(p, "method", "CASH")
+                            m_str = str(m_raw).upper() if m_raw else "CASH"
+                            if m_str not in valid_methods:
+                                m_str = "CASH"
+                            amt_val = p.get("amount") if isinstance(p, dict) else getattr(p, "amount", 0.0)
+                            pay_infos_list.append(CustomerPaymentInfosType(method=m_str, amount=float(amt_val)))
+                    else:
+                        m_raw = getattr(data, "payment_method", "CASH") or "CASH"
+                        m_str = str(m_raw).upper() if m_raw else "CASH"
+                        if m_str not in valid_methods:
+                            m_str = "CASH"
+                        pay_infos_list = [CustomerPaymentInfosType(method=m_str, amount=float(initial_paid))]
+
+                    add_infos = {
+                        "entity_name": data.entity_name or "order",
+                        "entity_id": str(data.entity_id) if data.entity_id else "",
+                        "notes": data.notes or f"Initial payment for {data.entity_name or 'order'}",
+                        "total_amount": float(data.total_amount or 0.0),
+                        "paid_amount": float(initial_paid),
+                        "on_credit_amount": float(data.outstanding_infos.amount)
+                    }
+
+                    cleared_db_schema = CreateCustomerOutstandingClearedDbSchema(
+                        shop_id=data.shop_id,
+                        customer_id=data.id,
+                        payment_infos=pay_infos_list,
+                        cleared_infos=cleared_infos,
+                        additional_infos=add_infos
+                    )
+                    await self.customer_repo_obj.clear_outstanding(data=cleared_db_schema)
+                    ic("Successfully saved customer outstanding history record")
+                except Exception as ex:
+                    ic("Error saving customer outstanding history record:", ex)
 
             total_customers=0
             total_customer_with_credit=0
@@ -376,7 +427,10 @@ class CustomerService:
                 total_outstanding=total_outstanding
             )
 
-            await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+            try:
+                await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+            except Exception as e:
+                ic(f"Failed to update customer stats in read db: {e}")
 
             try:
                 from messaging.main import RabbitMQMessagingConfig
@@ -407,6 +461,7 @@ class CustomerService:
         return res
     
     
+    @start_db_transaction
     async def clear_outstanding(self,data:CreateCustomerOutstandingClearedSchema) -> dict | None:
         outst_clr_id=generate_uuid()
         # STEP-1 CHECKING THE CUSTOMER EXISTANCE FOR GETTTING PREVIOUS VALUES
@@ -445,7 +500,8 @@ class CustomerService:
         )
         outstanding_infos=CustomerOutstandingInfosType(amount=cur_outst_amt)
         # STEP-3 (STEP-1) UPDATE THE CUSTOMER OUTSTANDING 
-        cust_upd_res=await self.add_outstanding(data=CreateCustomerOutstandingSchema(id=data.id,shop_id=data.shop_id,outstanding_infos=outstanding_infos,type=CustomerOutstandingAddEnums.DIRECT))
+        upd_db_schema=CreateCustomerOutstandingDbSchema(id=data.id,shop_id=data.shop_id,outstanding_infos=outstanding_infos,type=CustomerOutstandingAddEnums.DIRECT)
+        cust_upd_res=await self.customer_repo_obj.add_outstanding(data=upd_db_schema)
         ic(cust_upd_res)
         if not cust_upd_res:
             ic("Error Updating the customer outstanding")
@@ -469,7 +525,10 @@ class CustomerService:
                 total_outstanding=total_outstanding
             )
 
-            await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+            try:
+                await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
+            except Exception as e:
+                ic(f"Failed to update customer stats in read db: {e}")
 
             try:
                 from messaging.main import RabbitMQMessagingConfig

@@ -47,3 +47,4 @@ class CreateCustomerOutstandingClearedDbSchema(BaseModel):
     customer_id:str
     payment_infos:List[CustomerPaymentInfosType]
     cleared_infos:CustomerClearedInfosType
+    additional_infos:Optional[dict]=None

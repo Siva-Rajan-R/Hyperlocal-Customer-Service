@@ -97,7 +97,6 @@ class CustomerRepo:
         return res
     
 
-    @start_db_transaction
     async def add_outstanding(self,data:CreateCustomerOutstandingDbSchema):
         stmt=(
             update(
@@ -117,7 +116,6 @@ class CustomerRepo:
         return res
     
 
-    @start_db_transaction
     async def clear_outstanding(self,data:CreateCustomerOutstandingClearedDbSchema):
         stmt=(
             insert(

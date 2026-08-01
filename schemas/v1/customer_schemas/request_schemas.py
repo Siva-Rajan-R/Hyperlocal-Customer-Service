@@ -40,6 +40,13 @@ class CreateCustomerOutstandingSchema(BaseModel):
     shop_id:str
     outstanding_infos:CustomerOutstandingInfosType
     type:CustomerOutstandingAddEnums
+    payment_infos: Optional[List[dict]] = None
+    cleared_amount: Optional[float] = None
+    total_amount: Optional[float] = None
+    entity_name: Optional[str] = None
+    entity_id: Optional[str] = None
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
     
     
 
