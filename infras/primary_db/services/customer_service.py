@@ -149,6 +149,18 @@ class CustomerService:
         return res
     
 
+    async def create_bulk(self, data: List[CreateCustomerSchema]) -> List[dict]:
+        results = []
+        for item in data:
+            try:
+                res = await self.create(data=item)
+                if res:
+                    results.append(res)
+            except Exception as e:
+                ic(f"Error creating customer in bulk: {e}")
+        return results
+    
+
     async def update(self,data:UpdateCustomerSchema) -> dict | None:
 
         cust_get_res=await self.get_customer_by_id(data=GetCustomerByIdSchema(id=data.id,shop_id=data.shop_id))

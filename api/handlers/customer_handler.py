@@ -77,6 +77,26 @@ class HandleCustomerRequest:
         )
 
 
+    async def create_bulk(self, data: List[CreateCustomerSchema]):
+        created_list = []
+        for item in data:
+            try:
+                res_obj = await self.create(data=item)
+                if isinstance(res_obj, dict) and res_obj.get("data"):
+                    created_list.append(res_obj["data"])
+            except Exception as e:
+                ic(f"Error creating bulk customer item: {e}")
+
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                msg="Bulk customers created successfully",
+                status_code=201,
+                success=True
+            ),
+            data=created_list
+        )
+
+
     async def update(self,data:UpdateCustomerSchema):
         if data.can_have_credit and not data.credit_infos:
             raise HTTPException(

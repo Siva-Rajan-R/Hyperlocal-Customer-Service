@@ -1,6 +1,6 @@
 from fastapi import APIRouter,HTTPException,Query,Depends
 from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema
-from typing import Annotated,Optional
+from typing import Annotated,Optional,List
 from infras.primary_db.main import get_pg_async_session,AsyncSession
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from core.utils.validate_fields import validate_fields
@@ -20,6 +20,11 @@ SHOP_ID="TEST-SHOP"
 @router.post('')
 async def create(data:CreateCustomerSchema,session:PG_ASYNC_SESSION):
     return await HandleCustomerRequest(session=session).create(data=data)
+
+
+@router.post('/bulk')
+async def create_bulk(data:List[CreateCustomerSchema],session:PG_ASYNC_SESSION):
+    return await HandleCustomerRequest(session=session).create_bulk(data=data)
 
 
 @router.put('')
