@@ -409,6 +409,7 @@ class CustomerService:
                     add_infos = {
                         "entity_name": data.entity_name or "order",
                         "entity_id": str(data.entity_id) if data.entity_id else "",
+                        "invoice_no": str(data.invoice_no) if getattr(data, 'invoice_no', None) else "",
                         "notes": data.notes or f"Initial payment for {data.entity_name or 'order'}",
                         "total_amount": float(data.total_amount or 0.0),
                         "paid_amount": float(initial_paid),
@@ -503,12 +504,26 @@ class CustomerService:
             outstanding_after=cur_outst_amt
         )
 
+        # Build additional_infos to store notes, entity IDs etc in the ledger record
+        add_infos = {}
+        if data.notes or data.entity_id or data.entity_name or data.invoice_no:
+            add_infos = {
+                "entity_name": data.entity_name or "payment",
+                "entity_id": str(data.entity_id) if data.entity_id else "",
+                "invoice_no": data.invoice_no or "",
+                "notes": data.notes or f"Outstanding cleared via {data.entity_name or 'payment'}",
+                "cleared_amount": float(amount_cleared),
+                "outstanding_before": float(prev_outst_amt),
+                "outstanding_after": float(cur_outst_amt),
+            }
+
         # STEP-3 UPDAING ON THE DB
         final_data=CreateCustomerOutstandingClearedDbSchema(
             shop_id=data.shop_id,
             customer_id=data.id,
             payment_infos=data.payment_infos,
-            cleared_infos=cleared_infos
+            cleared_infos=cleared_infos,
+            additional_infos=add_infos if add_infos else None
         )
         outstanding_infos=CustomerOutstandingInfosType(amount=cur_outst_amt)
         # STEP-3 (STEP-1) UPDATE THE CUSTOMER OUTSTANDING 
@@ -590,15 +605,39 @@ class CustomerService:
 
     async def get_outst_clr(self,data:GetAllCustomerOutstClearedSchema) -> List[dict] | None:
         res=await self.customer_repo_obj.get_outst_cleared(data=data)
+        if res:
+            res = [ {
+                **dict(r),
+                "notes": r.get("additional_infos", {}).get("notes", "") if isinstance(r.get("additional_infos"), dict) else "",
+                "entity_name": r.get("additional_infos", {}).get("entity_name", "") if isinstance(r.get("additional_infos"), dict) else "",
+                "entity_id": r.get("additional_infos", {}).get("entity_id", "") if isinstance(r.get("additional_infos"), dict) else "",
+                "invoice_no": r.get("additional_infos", {}).get("invoice_no", "") if isinstance(r.get("additional_infos"), dict) else ""
+            } for r in res ]
         ic(res)
         return res
     
     async def get_outst_clr_by_shop_id(self,data:GetCustomerOutstClearedByShopIdSchema) -> List[dict] | None:
         res=await self.customer_repo_obj.get_outst_cleared_by_shop_id(data=data)
+        if res:
+            res = [ {
+                **dict(r),
+                "notes": r.get("additional_infos", {}).get("notes", "") if isinstance(r.get("additional_infos"), dict) else "",
+                "entity_name": r.get("additional_infos", {}).get("entity_name", "") if isinstance(r.get("additional_infos"), dict) else "",
+                "entity_id": r.get("additional_infos", {}).get("entity_id", "") if isinstance(r.get("additional_infos"), dict) else "",
+                "invoice_no": r.get("additional_infos", {}).get("invoice_no", "") if isinstance(r.get("additional_infos"), dict) else ""
+            } for r in res ]
         ic(res)
         return res
     
     async def get_outst_clr_by_id(self,data:GetCustomerOutstClearedByIdSchema) -> List[dict] | None:
         res=await self.customer_repo_obj.get_outst_cleared_by_id(data=data)
+        if res:
+            res = [ {
+                **dict(r),
+                "notes": r.get("additional_infos", {}).get("notes", "") if isinstance(r.get("additional_infos"), dict) else "",
+                "entity_name": r.get("additional_infos", {}).get("entity_name", "") if isinstance(r.get("additional_infos"), dict) else "",
+                "entity_id": r.get("additional_infos", {}).get("entity_id", "") if isinstance(r.get("additional_infos"), dict) else "",
+                "invoice_no": r.get("additional_infos", {}).get("invoice_no", "") if isinstance(r.get("additional_infos"), dict) else ""
+            } for r in res ]
         ic(res)
         return res

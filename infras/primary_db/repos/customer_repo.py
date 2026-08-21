@@ -177,7 +177,7 @@ class CustomerRepo:
         if conds:
             stmt = stmt.where(and_(*conds))
         
-        stmt = stmt.offset(offset=cursor).limit(limit=data.limit)
+        stmt = stmt.order_by(Customers.created_at.desc()).offset(offset=cursor).limit(limit=data.limit)
         res=(await self.session.execute(stmt)).mappings().all()
         return res
     
@@ -222,6 +222,7 @@ class CustomerRepo:
                 *self.customer_cols
             )
             .where(and_(*conds))
+            .order_by(Customers.created_at.desc())
             .offset(offset=cursor).limit(limit=data.limit)
         )
 
@@ -276,7 +277,7 @@ class CustomerRepo:
         if conds:
             stmt = stmt.where(and_(*conds))
         
-        stmt = stmt.offset(offset=cursor).limit(limit=data.limit)
+        stmt = stmt.order_by(CustomerOutstandingClearedHistories.created_at.desc()).offset(offset=cursor).limit(limit=data.limit)
         res=(await self.session.execute(stmt)).mappings().all()
         return res
     
@@ -311,6 +312,7 @@ class CustomerRepo:
                 *self.customer_cleared_his_cols
             )
             .where(and_(*conds))
+            .order_by(CustomerOutstandingClearedHistories.created_at.desc())
             .offset(offset=cursor).limit(limit=data.limit)
         )
 

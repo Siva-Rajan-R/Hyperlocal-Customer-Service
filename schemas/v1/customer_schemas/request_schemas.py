@@ -45,6 +45,7 @@ class CreateCustomerOutstandingSchema(BaseModel):
     total_amount: Optional[float] = None
     entity_name: Optional[str] = None
     entity_id: Optional[str] = None
+    invoice_no: Optional[str] = None
     payment_method: Optional[str] = None
     notes: Optional[str] = None
     
@@ -55,6 +56,10 @@ class CreateCustomerOutstandingClearedSchema(BaseModel):
     shop_id:str
     id:str
     payment_infos:List[CustomerPaymentInfosType]
+    notes: Optional[str] = None
+    entity_id: Optional[str] = None
+    entity_name: Optional[str] = None
+    invoice_no: Optional[str] = None
 
 
 
