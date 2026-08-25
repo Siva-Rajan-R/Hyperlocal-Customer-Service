@@ -113,9 +113,9 @@ class CustomerService:
                         "service": "Customer",
                         "action": "CREATED",
                         "entity_type": "CUSTOMER",
-                        "entity_id": str(customer_id),
+                        "entity_id": str(ui_id),
                         "entity_name": str(customer_name),
-                        "description": f"Created Customer {customer_name} ({customer_id})",
+                        "description": f"Created Customer {customer_name} ({ui_id})",
                         "changes": []
                     },
                     headers={}
@@ -240,6 +240,7 @@ class CustomerService:
                         })
                 
                 cust_name = cust_get_res.get('name') or getattr(data, 'name', None) or 'Customer'
+                effective_ui_id = cust_get_res.get('ui_id') or getattr(data, 'ui_id', None) or str(data.id)
 
                 await rabbitmq_msg_obj.publish_event(
                     routing_key="activity_logs.routing.key",
@@ -250,9 +251,9 @@ class CustomerService:
                         "service": "Customer",
                         "action": "UPDATED",
                         "entity_type": "CUSTOMER",
-                        "entity_id": str(data.id),
+                        "entity_id": str(effective_ui_id),
                         "entity_name": str(cust_name),
-                        "description": f"Updated Customer {cust_name} ({data.id})",
+                        "description": f"Updated Customer {cust_name} ({effective_ui_id})",
                         "changes": changes
                     },
                     headers={}
