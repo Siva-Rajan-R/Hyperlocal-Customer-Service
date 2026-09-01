@@ -329,6 +329,7 @@ class CustomerRepo:
                 CustomerOutstandingClearedHistories.shop_id==data.shop_id,
                 CustomerOutstandingClearedHistories.customer_id==data.id
             )
+            .order_by(CustomerOutstandingClearedHistories.created_at.desc(), CustomerOutstandingClearedHistories.id.desc())
         )
 
         res=(await self.session.execute(stmt)).mappings().all()

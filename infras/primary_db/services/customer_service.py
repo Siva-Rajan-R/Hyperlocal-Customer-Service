@@ -19,7 +19,29 @@ from ..models.customer_model import Customers
 from ..services.customfield_service import CustomFieldsService,CreateCustomFieldValueSchema
 from icecream import ic
 import httpx
+import re
 from integrations.utility_service import get_ui_id, get_shop_category, get_shop_unit
+
+
+def extract_display_invoice_no(additional_infos: dict) -> str:
+    if not isinstance(additional_infos, dict):
+        return ""
+    inv = additional_infos.get("invoice_no") or ""
+    is_uuid = bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', str(inv).strip(), re.IGNORECASE))
+    if inv and not is_uuid:
+        return inv
+    
+    # Check notes for ORD-XXXXXX, RET-XXXXXX, EXC-XXXXXX, INV-XXXXXX etc.
+    notes = additional_infos.get("notes") or ""
+    match = re.search(r'\b((?:ORD|RET|EXC|INV|PUR|PR)-\d+)\b', notes, re.IGNORECASE)
+    if match:
+        return match.group(1)
+        
+    entity_id = additional_infos.get("entity_id") or ""
+    if entity_id and not bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', str(entity_id).strip(), re.IGNORECASE)):
+        return entity_id
+        
+    return inv or entity_id
 
 
 
@@ -407,10 +429,11 @@ class CustomerService:
                             m_str = "CASH"
                         pay_infos_list = [CustomerPaymentInfosType(method=m_str, amount=float(initial_paid))]
 
+                    effective_invoice_no = str(data.invoice_no) if getattr(data, 'invoice_no', None) else str(data.entity_id) if data.entity_id else ""
                     add_infos = {
                         "entity_name": data.entity_name or "order",
                         "entity_id": str(data.entity_id) if data.entity_id else "",
-                        "invoice_no": str(data.invoice_no) if getattr(data, 'invoice_no', None) else "",
+                        "invoice_no": effective_invoice_no,
                         "notes": data.notes or f"Initial payment for {data.entity_name or 'order'}",
                         "total_amount": float(data.total_amount or 0.0),
                         "paid_amount": float(initial_paid),
@@ -508,10 +531,11 @@ class CustomerService:
         # Build additional_infos to store notes, entity IDs etc in the ledger record
         add_infos = {}
         if data.notes or data.entity_id or data.entity_name or data.invoice_no:
+            effective_inv = data.invoice_no or str(data.entity_id) if data.entity_id else ""
             add_infos = {
                 "entity_name": data.entity_name or "payment",
                 "entity_id": str(data.entity_id) if data.entity_id else "",
-                "invoice_no": data.invoice_no or "",
+                "invoice_no": effective_inv,
                 "notes": data.notes or f"Outstanding cleared via {data.entity_name or 'payment'}",
                 "cleared_amount": float(amount_cleared),
                 "outstanding_before": float(prev_outst_amt),
@@ -578,6 +602,7 @@ class CustomerService:
                         "reply_key": "none",
                         "reply_exchange": "none",
                         "reply_entity_name": "none",
+                        "reply_service_name": "none",
                         "body": analytics_payload
                     }
                 )
@@ -612,7 +637,7 @@ class CustomerService:
                 "notes": r.get("additional_infos", {}).get("notes", "") if isinstance(r.get("additional_infos"), dict) else "",
                 "entity_name": r.get("additional_infos", {}).get("entity_name", "") if isinstance(r.get("additional_infos"), dict) else "",
                 "entity_id": r.get("additional_infos", {}).get("entity_id", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "invoice_no": r.get("additional_infos", {}).get("invoice_no", "") if isinstance(r.get("additional_infos"), dict) else ""
+                "invoice_no": extract_display_invoice_no(r.get("additional_infos")) if isinstance(r.get("additional_infos"), dict) else ""
             } for r in res ]
         ic(res)
         return res
@@ -625,7 +650,7 @@ class CustomerService:
                 "notes": r.get("additional_infos", {}).get("notes", "") if isinstance(r.get("additional_infos"), dict) else "",
                 "entity_name": r.get("additional_infos", {}).get("entity_name", "") if isinstance(r.get("additional_infos"), dict) else "",
                 "entity_id": r.get("additional_infos", {}).get("entity_id", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "invoice_no": r.get("additional_infos", {}).get("invoice_no", "") if isinstance(r.get("additional_infos"), dict) else ""
+                "invoice_no": extract_display_invoice_no(r.get("additional_infos")) if isinstance(r.get("additional_infos"), dict) else ""
             } for r in res ]
         ic(res)
         return res
@@ -638,7 +663,7 @@ class CustomerService:
                 "notes": r.get("additional_infos", {}).get("notes", "") if isinstance(r.get("additional_infos"), dict) else "",
                 "entity_name": r.get("additional_infos", {}).get("entity_name", "") if isinstance(r.get("additional_infos"), dict) else "",
                 "entity_id": r.get("additional_infos", {}).get("entity_id", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "invoice_no": r.get("additional_infos", {}).get("invoice_no", "") if isinstance(r.get("additional_infos"), dict) else ""
+                "invoice_no": extract_display_invoice_no(r.get("additional_infos")) if isinstance(r.get("additional_infos"), dict) else ""
             } for r in res ]
         ic(res)
         return res
