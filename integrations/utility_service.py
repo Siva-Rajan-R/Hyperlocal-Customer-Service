@@ -52,3 +52,24 @@ async def get_ui_id(shop_id:str,entity_name:str="CUSTOMER"):
     except Exception as e:
         ic(f"Error fetching product ui id: {e}")
     return {}
+
+
+async def upload_export_file(file_bytes: bytes, filename: str, content_type: str) -> str:
+    try:
+        multipart_files = [
+            ("files", (filename, file_bytes, content_type))
+        ]
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(
+                f"{BASE_URL}/upload/assets",
+                files=multipart_files,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                uploaded = data.get("data", [])
+                if uploaded and len(uploaded) > 0:
+                    return uploaded[0]
+    except Exception as e:
+        ic(f"Error uploading export file: {e}")
+    return ""
+
