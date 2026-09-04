@@ -1,3 +1,4 @@
+from core.utils.user_context import get_activity_log_user_info
 from ..main import AsyncSession
 from ..repos.customer_repo import CustomerRepo
 from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema
@@ -131,7 +132,7 @@ class CustomerService:
                     exchange_name="activity_logs.exchange",
                     payload={
                         "shop_id": data.shop_id,
-                        "user_name": "Hyperlocal-User",
+                        **get_activity_log_user_info(),
                         "service": "Customer",
                         "action": "CREATED",
                         "entity_type": "CUSTOMER",
@@ -269,7 +270,7 @@ class CustomerService:
                     exchange_name="activity_logs.exchange",
                     payload={
                         "shop_id": data.shop_id,
-                        "user_name": "Hyperlocal-User",
+                        **get_activity_log_user_info(),
                         "service": "Customer",
                         "action": "UPDATED",
                         "entity_type": "CUSTOMER",
@@ -341,7 +342,7 @@ class CustomerService:
                     exchange_name="activity_logs.exchange",
                     payload={
                         "shop_id": data.shop_id,
-                        "user_name": "Hyperlocal-User",
+                        **get_activity_log_user_info(),
                         "service": "Customer",
                         "action": "DELETED",
                         "entity_type": "CUSTOMER",
