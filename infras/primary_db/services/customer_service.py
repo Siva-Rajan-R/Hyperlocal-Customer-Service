@@ -4,7 +4,8 @@ from ..repos.customer_repo import CustomerRepo
 from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,UpdateCustomerSchema,DeleteCustomerSchema,CreateCustomerOutstandingClearedSchema,CreateCustomerOutstandingSchema,GetAllCustomerOutstClearedSchema,GetAllCustomerSchema,GetCustomerByIdSchema,GetCustomerByShopIdSchema,GetCustomerOutstClearedByIdSchema,GetCustomerOutstClearedByShopIdSchema
 from schemas.v1.customer_schemas.db_schemas import CreateCustomerDbSchema,UpdateCustomerDbSchema,DeleteCustomerDbSchema,CreateCustomerOutstandingClearedDbSchema,CreateCustomerOutstandingDbSchema
 from schemas.v1.customer_schemas.custom_types import CustomerOutstandingInfosType,CustomerClearedInfosType,CustomerCreditInfosType,CustomerPaymentInfosType
-from sqlalchemy import select
+import os
+from sqlalchemy import select, delete
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 from fastapi.exceptions import HTTPException
@@ -312,6 +313,44 @@ class CustomerService:
         return res
     
     async def delete(self,data:DeleteCustomerSchema) -> dict | None:
+        # 1. Fetch customer to validate
+        cust_get_res = await self.get_customer_by_id(data=GetCustomerByIdSchema(id=data.id, shop_id=data.shop_id))
+        if not cust_get_res:
+            ic("The given customer doesn't exist")
+            return False
+
+        # 2. Condition 1: Check outstanding balance
+        outst_infos = cust_get_res.get("outstanding_infos") or {}
+        outst_amount = float(outst_infos.get("amount", 0.0) or 0.0)
+        if outst_amount > 0:
+            raise ValueError(f"Cannot delete customer '{cust_get_res.get('name', data.id)}' because they have an outstanding balance of ₹{outst_amount}. Outstanding balance must be cleared before deletion.")
+
+        # 3. Condition 2: Check if any sales/orders happened for this customer
+        ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://127.0.0.1:8007")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                res_orders = await client.get(f"{ORDER_SERVICE_URL}/orders/by/customer/{data.shop_id}/{data.id}?limit=1")
+                if res_orders.status_code == 200:
+                    orders_data = res_orders.json()
+                    orders_list = orders_data.get("data", [])
+                    if isinstance(orders_list, list) and len(orders_list) > 0:
+                        raise ValueError(f"Cannot delete customer '{cust_get_res.get('name', data.id)}' because sales/orders are associated with this customer.")
+                    elif isinstance(orders_list, dict):
+                        datas = orders_list.get("datas") or []
+                        if len(datas) > 0:
+                            raise ValueError(f"Cannot delete customer '{cust_get_res.get('name', data.id)}' because sales/orders are associated with this customer.")
+            except ValueError:
+                raise
+            except Exception as e:
+                ic(f"Error checking orders for customer: {e}")
+
+        # 4. Clean up custom field values for this customer
+        try:
+            from ..models.customfield_model import CustomerCustomFieldsValues
+            await self.session.execute(delete(CustomerCustomFieldsValues).where(CustomerCustomFieldsValues.customer_id == data.id, CustomerCustomFieldsValues.shop_id == data.shop_id))
+        except Exception as e:
+            ic(f"Error cleaning up customer custom fields values: {e}")
+
         final_data=DeleteCustomerDbSchema(**data.model_dump())
         res=await self.customer_repo_obj.delete(data=final_data)
         ic(res)
@@ -332,6 +371,7 @@ class CustomerService:
             await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
             
             customer_name = res.get('name', 'Customer')
+            effective_ui_id = res.get('ui_id', data.id)
 
             try:
                 from messaging.main import RabbitMQMessagingConfig
@@ -346,9 +386,9 @@ class CustomerService:
                         "service": "Customer",
                         "action": "DELETED",
                         "entity_type": "CUSTOMER",
-                        "entity_id": str(data.id),
+                        "entity_id": str(effective_ui_id),
                         "entity_name": str(customer_name),
-                        "description": f"Deleted Customer {customer_name} ({data.id})",
+                        "description": f"Deleted Customer {customer_name} ({effective_ui_id})",
                         "changes": []
                     },
                     headers={}

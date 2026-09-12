@@ -153,26 +153,39 @@ class HandleCustomerRequest:
 
 
     async def delete(self,data:DeleteCustomerSchema):
-        res=await CustomerService(session=self.session).delete(data=data)
-        if not res:
+        try:
+            res=await CustomerService(session=self.session).delete(data=data)
+            if not res:
+                raise HTTPException(
+                    status_code=400,
+                    detail=ErrorResponseTypDict(
+                        msg="Error : Deleting customer",
+                        description="Invalid customer id for deleting customer",
+                        status_code=400,
+                        success=False
+                    )
+                )
+            
+            return SuccessResponseTypDict(
+                detail=BaseResponseTypDict(
+                    msg="Customer deleted successfully",
+                    status_code=200,
+                    success=True
+                ),
+                data=res if res else None
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponseTypDict(
                     msg="Error : Deleting customer",
-                    description="Invalid customer id for deleting customer",
+                    description=str(e),
                     status_code=400,
                     success=False
                 )
             )
-        
-        return SuccessResponseTypDict(
-            detail=BaseResponseTypDict(
-                msg="Customer deleted successfully",
-                status_code=200,
-                success=True
-            ),
-            data=res if res else None
-        )
     
 
     async def add_outstanding(self,data:CreateCustomerOutstandingSchema) -> dict | None:
