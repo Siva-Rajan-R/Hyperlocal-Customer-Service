@@ -11,6 +11,10 @@ class ExportDataRequestSchema(BaseModel):
     to_date: Optional[str] = Field(default=None, description="End date (YYYY-MM-DD)")
     user_id: Optional[str] = Field(default=None, description="Requesting User ID for notification")
     has_outstanding: Optional[bool] = Field(default=None, description="Filter customers by outstanding balance")
+    exclude_outstanding: Optional[bool] = Field(default=None, description="Exclude customers with outstanding balance")
+    exclude_outstatings: Optional[bool] = Field(default=None, description="Exclude customers with outstanding balance")
+    exclude_non_outstanding: Optional[bool] = Field(default=None, description="Exclude customers without outstanding balance")
+    exclude_non_outstandings: Optional[bool] = Field(default=None, description="Exclude customers without outstanding balance")
 
 class ExportJobResponseSchema(BaseModel):
     job_id: str

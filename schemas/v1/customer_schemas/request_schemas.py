@@ -71,6 +71,18 @@ class GetAllCustomerSchema(BaseModel):
     from_date:Optional[str]=None
     to_date:Optional[str]=None
     has_outstanding:Optional[bool]=None
+    exclude_outstanding:Optional[bool]=None
+    exclude_outstatings:Optional[bool]=None
+    exclude_outstaitng:Optional[bool]=None
+    exclude_outstating:Optional[bool]=None
+    exclude_outstanding_customers:Optional[bool]=None
+    exclude_with_outstanding:Optional[bool]=None
+    exclude_non_outstanding:Optional[bool]=None
+    exclude_non_outstandings:Optional[bool]=None
+    exclude_non_outstating:Optional[bool]=None
+    exclude_no_outstanding:Optional[bool]=None
+    exclude_zero_outstanding:Optional[bool]=None
+    exclude_without_outstanding:Optional[bool]=None
 
 
 class GetCustomerByShopIdSchema(BaseModel):
@@ -81,6 +93,18 @@ class GetCustomerByShopIdSchema(BaseModel):
     from_date:Optional[str]=None
     to_date:Optional[str]=None
     has_outstanding:Optional[bool]=None
+    exclude_outstanding:Optional[bool]=None
+    exclude_outstatings:Optional[bool]=None
+    exclude_outstaitng:Optional[bool]=None
+    exclude_outstating:Optional[bool]=None
+    exclude_outstanding_customers:Optional[bool]=None
+    exclude_with_outstanding:Optional[bool]=None
+    exclude_non_outstanding:Optional[bool]=None
+    exclude_non_outstandings:Optional[bool]=None
+    exclude_non_outstating:Optional[bool]=None
+    exclude_no_outstanding:Optional[bool]=None
+    exclude_zero_outstanding:Optional[bool]=None
+    exclude_without_outstanding:Optional[bool]=None
 
 
 class GetCustomerByIdSchema(BaseModel):

@@ -54,7 +54,9 @@ async def process_customer_export(payload: dict) -> dict:
                 offset=offset,
                 from_date=from_date,
                 to_date=to_date,
-                has_outstanding=has_outstanding
+                has_outstanding=has_outstanding,
+                exclude_outstanding=payload.get("exclude_outstanding") or payload.get("exclude_outstatings"),
+                exclude_non_outstanding=payload.get("exclude_non_outstanding") or payload.get("exclude_non_outstandings")
             )
             customers = await repo.getby_shop_id(data=fetch_schema)
 

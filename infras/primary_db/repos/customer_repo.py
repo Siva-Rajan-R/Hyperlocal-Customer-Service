@@ -1,7 +1,7 @@
 from models.repo_models.base_repo_model import BaseRepoModel
 from ..models.customer_model import Customers,String,CustomerOutstandingClearedHistories
 from ..main import AsyncSession
-from sqlalchemy import select,update,delete,or_,and_,func,case,text
+from sqlalchemy import select,update,delete,or_,and_,func,case,text,Float,literal
 from sqlalchemy.dialects.postgresql import insert
 from datetime import datetime, timezone
 from schemas.v1.customer_schemas.db_schemas import CreateCustomerDbSchema,UpdateCustomerDbSchema,DeleteCustomerDbSchema,CreateCustomerOutstandingDbSchema,CreateCustomerOutstandingClearedDbSchema
@@ -25,79 +25,95 @@ class CustomerRepo:
             Customers.sequence_id,
             Customers.name,
             Customers.contact_infos,
-            Customers.location_infos,
             Customers.credit_infos,
+            Customers.location_infos,
             Customers.outstanding_infos,
             Customers.can_have_credit,
             Customers.additional_infos,
             Customers.created_at,
             Customers.updated_at,
         )
-        self.customer_cleared_his_cols=(
+        self.cust_out_hist_cols=(
             CustomerOutstandingClearedHistories.id,
             CustomerOutstandingClearedHistories.shop_id,
-            CustomerOutstandingClearedHistories.additional_infos,
-            CustomerOutstandingClearedHistories.cleared_infos,
-            CustomerOutstandingClearedHistories.payment_infos,
             CustomerOutstandingClearedHistories.customer_id,
-            CustomerOutstandingClearedHistories.updated_at,
-            CustomerOutstandingClearedHistories.created_at
+            CustomerOutstandingClearedHistories.payment_infos,
+            CustomerOutstandingClearedHistories.cleared_infos,
+            CustomerOutstandingClearedHistories.additional_infos,
+            CustomerOutstandingClearedHistories.created_at,
+            CustomerOutstandingClearedHistories.updated_at
         )
+        self.customer_cleared_his_cols = self.cust_out_hist_cols
 
 
 
-    @start_db_transaction
     async def get_next_sequence(self, shop_id: str, start_from: int) -> int:
         seq_name = f"seq_customer_{shop_id.replace('-', '_').lower()}"
         await self.session.execute(text(f"CREATE SEQUENCE IF NOT EXISTS {seq_name} START WITH {start_from}"))
         res = await self.session.execute(text(f"SELECT nextval('{seq_name}')"))
         return res.scalar_one()
 
-    @start_db_transaction
-    async def create(self,data:CreateCustomerDbSchema)->dict | None:
+    async def create(self,data:CreateCustomerDbSchema) -> dict | None:
         stmt=(
             insert(
                 Customers
             )
-            .values(
-                **data.model_dump(mode="json")
-            )
+            .values(**data.model_dump(mode="json",exclude_none=True,exclude_unset=True))
             .returning(*self.customer_cols)
         )
         res=(await self.session.execute(stmt)).mappings().one_or_none()
         return res
     
 
-    @start_db_transaction
-    async def update(self,data:UpdateCustomerDbSchema)->dict|None:
-        stmt=update(
-            Customers
-        ).where(
-            and_(
+    async def update(self,data:UpdateCustomerDbSchema) -> dict | None:
+        stmt=(
+            update(
+                Customers
+            )
+            .where(
+                and_(
+                    Customers.id==data.id,
+                    Customers.shop_id==data.shop_id
+                )
+            )
+            .values(**data.model_dump(mode="json",exclude_none=True,exclude_unset=True,exclude=['id','shop_id']))
+            .returning(*self.customer_cols)
+        )
+
+        res=(await self.session.execute(stmt)).mappings().one_or_none()
+        if not res:
+            fallback_stmt=(
+                update(
+                    Customers
+                )
+                .where(
+                    Customers.id==data.id
+                )
+                .values(**data.model_dump(mode="json",exclude_none=True,exclude_unset=True,exclude=['id','shop_id']))
+                .returning(*self.customer_cols)
+            )
+            res=(await self.session.execute(fallback_stmt)).mappings().one_or_none()
+        return res
+    
+
+    async def delete(self,data:DeleteCustomerDbSchema):
+        stmt=(
+            delete(
+                Customers
+            )
+            .where(
                 Customers.id==data.id,
                 Customers.shop_id==data.shop_id
             )
-        ).values(
-            credit_infos=data.credit_infos.model_dump(mode="json"),
-            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True,exclude=['id','shop_id','credit_infos'])
-        ).returning(*self.customer_cols)
+            .returning(*self.customer_cols)
+        )
 
-        res=(await self.session.execute(stmt)).mappings().one_or_none()
-        return res
-    
-
-    @start_db_transaction
-    async def delete(self, data:DeleteCustomerDbSchema)->dict|None:
-        stmt=delete(
-            Customers
-        ).where(Customers.id==data.id,Customers.shop_id==data.shop_id).returning(*self.customer_cols)
-
-        res=(await self.session.execute(stmt)).mappings().one_or_none()
+        res=(await self.session.execute(stmt)).mappings().all()
 
         return res
     
 
-    async def add_outstanding(self,data:CreateCustomerOutstandingDbSchema):
+    async def add_outstanding(self,data:CreateCustomerOutstandingDbSchema)->dict | None:
         stmt=(
             update(
                 Customers
@@ -107,12 +123,26 @@ class CustomerRepo:
                 Customers.shop_id==data.shop_id
             )
             .values(
-                outstanding_infos=data.outstanding_infos.model_dump()
+                outstanding_infos=data.outstanding_infos.model_dump(mode='json')
             )
-        ).returning(*self.customer_cols)
+            .returning(*self.customer_cols)
+        )
 
         res=(await self.session.execute(stmt)).mappings().one_or_none()
-
+        if not res:
+            fallback_stmt=(
+                update(
+                    Customers
+                )
+                .where(
+                    Customers.id==data.id
+                )
+                .values(
+                    outstanding_infos=data.outstanding_infos.model_dump(mode='json')
+                )
+                .returning(*self.customer_cols)
+            )
+            res=(await self.session.execute(fallback_stmt)).mappings().one_or_none()
         return res
     
 
@@ -161,10 +191,39 @@ class CustomerRepo:
                 conds.append(Customers.created_at <= to_dt)
             except Exception:
                 pass
-        if getattr(data, 'has_outstanding', None) is not None:
-            from sqlalchemy import Float
-            amount_expr = func.cast(Customers.outstanding_infos['amount'].astext, Float)
-            if data.has_outstanding:
+
+        amount_expr = func.coalesce(func.cast(Customers.outstanding_infos['amount'].astext, Float), 0.0)
+
+        exclude_outstanding = getattr(data, 'exclude_outstanding', None)
+        if exclude_outstanding is None:
+            exclude_outstanding = (
+                getattr(data, 'exclude_outstatings', None) or
+                getattr(data, 'exclude_outstaitng', None) or
+                getattr(data, 'exclude_outstating', None) or
+                getattr(data, 'exclude_outstanding_customers', None) or
+                getattr(data, 'exclude_with_outstanding', None)
+            )
+        is_ex_out = (str(exclude_outstanding).strip().lower() in ("true", "1", "yes")) if isinstance(exclude_outstanding, str) else bool(exclude_outstanding)
+
+        exclude_non_outstanding = getattr(data, 'exclude_non_outstanding', None)
+        if exclude_non_outstanding is None:
+            exclude_non_outstanding = (
+                getattr(data, 'exclude_non_outstandings', None) or
+                getattr(data, 'exclude_non_outstating', None) or
+                getattr(data, 'exclude_no_outstanding', None) or
+                getattr(data, 'exclude_zero_outstanding', None) or
+                getattr(data, 'exclude_without_outstanding', None)
+            )
+        is_ex_non_out = (str(exclude_non_outstanding).strip().lower() in ("true", "1", "yes")) if isinstance(exclude_non_outstanding, str) else bool(exclude_non_outstanding)
+
+        if is_ex_out and is_ex_non_out:
+            conds.append(literal(False))
+        elif is_ex_out:
+            conds.append(or_(Customers.outstanding_infos == None, amount_expr <= 0.0))
+        elif is_ex_non_out:
+            conds.append(and_(Customers.outstanding_infos != None, amount_expr > 0.0))
+        elif getattr(data, 'has_outstanding', None) is not None:
+            if (str(data.has_outstanding).strip().lower() in ("true", "1", "yes")) if isinstance(data.has_outstanding, str) else bool(data.has_outstanding):
                 conds.append(and_(Customers.outstanding_infos != None, amount_expr > 0.0))
             else:
                 conds.append(or_(Customers.outstanding_infos == None, amount_expr <= 0.0))
@@ -209,10 +268,39 @@ class CustomerRepo:
                 conds.append(Customers.created_at <= to_dt)
             except Exception:
                 pass
-        if getattr(data, 'has_outstanding', None) is not None:
-            from sqlalchemy import Float
-            amount_expr = func.cast(Customers.outstanding_infos['amount'].astext, Float)
-            if data.has_outstanding:
+
+        amount_expr = func.coalesce(func.cast(Customers.outstanding_infos['amount'].astext, Float), 0.0)
+
+        exclude_outstanding = getattr(data, 'exclude_outstanding', None)
+        if exclude_outstanding is None:
+            exclude_outstanding = (
+                getattr(data, 'exclude_outstatings', None) or
+                getattr(data, 'exclude_outstaitng', None) or
+                getattr(data, 'exclude_outstating', None) or
+                getattr(data, 'exclude_outstanding_customers', None) or
+                getattr(data, 'exclude_with_outstanding', None)
+            )
+        is_ex_out = (str(exclude_outstanding).strip().lower() in ("true", "1", "yes")) if isinstance(exclude_outstanding, str) else bool(exclude_outstanding)
+
+        exclude_non_outstanding = getattr(data, 'exclude_non_outstanding', None)
+        if exclude_non_outstanding is None:
+            exclude_non_outstanding = (
+                getattr(data, 'exclude_non_outstandings', None) or
+                getattr(data, 'exclude_non_outstating', None) or
+                getattr(data, 'exclude_no_outstanding', None) or
+                getattr(data, 'exclude_zero_outstanding', None) or
+                getattr(data, 'exclude_without_outstanding', None)
+            )
+        is_ex_non_out = (str(exclude_non_outstanding).strip().lower() in ("true", "1", "yes")) if isinstance(exclude_non_outstanding, str) else bool(exclude_non_outstanding)
+
+        if is_ex_out and is_ex_non_out:
+            conds.append(literal(False))
+        elif is_ex_out:
+            conds.append(or_(Customers.outstanding_infos == None, amount_expr <= 0.0))
+        elif is_ex_non_out:
+            conds.append(and_(Customers.outstanding_infos != None, amount_expr > 0.0))
+        elif getattr(data, 'has_outstanding', None) is not None:
+            if (str(data.has_outstanding).strip().lower() in ("true", "1", "yes")) if isinstance(data.has_outstanding, str) else bool(data.has_outstanding):
                 conds.append(and_(Customers.outstanding_infos != None, amount_expr > 0.0))
             else:
                 conds.append(or_(Customers.outstanding_infos == None, amount_expr <= 0.0))
