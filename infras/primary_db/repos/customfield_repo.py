@@ -18,6 +18,7 @@ class CustomFieldsRepo:
     async def create_all_field(self, data: List[CreateCustomFieldDbSchema]) -> bool:
         field_toadd=[CustomerCustomFields(**field.model_dump()) for field in data]
         self.session.add_all(field_toadd)
+        await self.session.commit()
         return True
     
 
@@ -30,15 +31,14 @@ class CustomFieldsRepo:
             .returning(CustomerCustomFields.id)
         )
         res = (await self.session.execute(stmt)).scalar_one_or_none()
+        await self.session.commit()
         return res
 
     @start_db_transaction
     async def delete_field(self,data:DeleteCustomFieldDbSchema) -> bool:
-        stmt = delete(CustomerCustomFields).where(
-            CustomerCustomFields.id == data.id,
-            CustomerCustomFields.shop_id == data.shop_id
-        )
+        stmt = delete(CustomerCustomFields).where(CustomerCustomFields.id == (data.id if hasattr(data, "id") and data.id else getattr(data, "field_id", None)), CustomerCustomFields.shop_id == data.shop_id)
         res = await self.session.execute(stmt)
+        await self.session.commit()
         return res.rowcount > 0
 
 
@@ -80,7 +80,25 @@ class CustomFieldsRepo:
     async def get_fields_by_shop_id(self, data:GetFieldByShopIdSchema) -> List[dict]:
         stmt = select(CustomerCustomFields).where(CustomerCustomFields.shop_id == data.shop_id)
         res = (await self.session.execute(stmt)).scalars().all()
-        return [{c.name: getattr(row, c.name) for c in row.__table__.columns} for row in res]
+        
+        field_ids = [row.id for row in res]
+        valued_field_ids = set()
+        if field_ids:
+            val_stmt = select(CustomerCustomFieldsValues.field_id).where(
+                CustomerCustomFieldsValues.field_id.in_(field_ids),
+                CustomerCustomFieldsValues.shop_id == data.shop_id,
+                CustomerCustomFieldsValues.value.isnot(None),
+                CustomerCustomFieldsValues.value != ""
+            ).distinct()
+            val_res = (await self.session.execute(val_stmt)).scalars().all()
+            valued_field_ids = set(val_res)
+            
+        result = []
+        for row in res:
+            d = {c.name: getattr(row, c.name) for c in row.__table__.columns}
+            d["has_values"] = row.id in valued_field_ids
+            result.append(d)
+        return result
     
 
     async def get_fields(self) -> List[dict]:
@@ -113,6 +131,7 @@ class CustomFieldsRepo:
         # 4. Execute the batch operation efficiently in one database round-trip
         conn = await self.session.connection()
         res = await conn.execute(upsert_stmt, insert_mappings)
+        await self.session.commit()
         
         ic("Total rows handled (Inserted + Updated) => ", res.rowcount)
         return True
@@ -139,3 +158,11 @@ class CustomFieldsRepo:
         res = (await self.session.execute(stmt)).mappings().all()
         return [{c.name: getattr(row, c.name) for c in row.__table__.columns} for row in res]
 
+
+    async def get_values_by_field_id(self, field_id: str, shop_id: str) -> List[dict]:
+        stmt = select(CustomerCustomFieldsValues).where(
+            CustomerCustomFieldsValues.field_id == field_id,
+            CustomerCustomFieldsValues.shop_id == shop_id
+        )
+        res = (await self.session.execute(stmt)).scalars().all()
+        return [{c.name: getattr(row, c.name) for c in row.__table__.columns} for row in res]
