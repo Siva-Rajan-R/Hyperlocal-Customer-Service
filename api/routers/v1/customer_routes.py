@@ -89,12 +89,6 @@ async def export_customers(data: ExportDataRequestSchema):
     payload = data.model_dump()
     payload["job_id"] = job_id
     
-    redis = await create_pool(RedisSettings.from_dsn(REDIS_URL))
-    await redis.enqueue_job("export_customers_task", payload, _job_id=job_id, _queue_name="customer_export_queue")
-    await redis.close()
-
-    
-    # Store initial state in Redis
     redis_client = aioredis.Redis.from_url(REDIS_URL, decode_responses=True)
     await redis_client.set(
         f"EXPORT_JOB:{job_id}",
@@ -107,6 +101,12 @@ async def export_customers(data: ExportDataRequestSchema):
         ex=86400
     )
     await redis_client.aclose()
+
+    try:
+        from background_worker import export_customers_task
+        asyncio.create_task(export_customers_task(None, payload))
+    except Exception:
+        pass
     
     return SuccessResponseTypDict(
         detail=BaseResponseTypDict(
