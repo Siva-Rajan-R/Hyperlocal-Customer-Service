@@ -45,4 +45,10 @@ async def worker():
     # customer_consumer = CustomerMsgQueueConsumer()
     # await customer_consumer.consume()
 
-    await asyncio.Event().wait()
+    try:
+        await asyncio.Event().wait()
+    except asyncio.CancelledError:
+        pass
+    finally:
+        if rabbitmq_conn and not rabbitmq_conn.is_closed:
+            await rabbitmq_conn.close()

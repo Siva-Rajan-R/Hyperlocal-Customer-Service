@@ -65,8 +65,8 @@ class HandleCustomerRequest:
                     success=False
                 )
             )
-            
         
+        await self.session.commit()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Customer created successfully",
@@ -87,6 +87,7 @@ class HandleCustomerRequest:
             except Exception as e:
                 ic(f"Error creating bulk customer item: {e}")
 
+        await self.session.commit()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Bulk customers created successfully",
@@ -142,6 +143,7 @@ class HandleCustomerRequest:
                 )
             )
         
+        await self.session.commit()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Customer updated successfully",
@@ -166,6 +168,7 @@ class HandleCustomerRequest:
                     )
                 )
             
+            await self.session.commit()
             return SuccessResponseTypDict(
                 detail=BaseResponseTypDict(
                     msg="Customer deleted successfully",
@@ -201,6 +204,7 @@ class HandleCustomerRequest:
             )
         res=await CustomerService(session=self.session).add_outstanding(data=data)
         ic(res)
+        await self.session.commit()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Outstanding added successfully",
@@ -214,6 +218,7 @@ class HandleCustomerRequest:
     async def clear_outstanding(self,data:CreateCustomerOutstandingClearedSchema) -> dict | None:
         res=await CustomerService(session=self.session).clear_outstanding(data=data)
         ic(res)
+        await self.session.commit()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 msg="Outstanding cleared successfully",

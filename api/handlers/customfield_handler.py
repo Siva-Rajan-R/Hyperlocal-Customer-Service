@@ -14,6 +14,7 @@ class CustomFieldsHandler:
     async def create_field(data: CreateCustomFieldSchema, session: AsyncSession):
         service = CustomFieldsService(session)
         res = await service.create_bulk_field(data=data)
+        await session.commit()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
@@ -27,6 +28,7 @@ class CustomFieldsHandler:
     async def update_field(data: UpdateCustomFieldSchema, session: AsyncSession):
         service = CustomFieldsService(session)
         res = await service.update_field(data=data)
+        await session.commit()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
@@ -40,6 +42,7 @@ class CustomFieldsHandler:
     async def delete_field(data: DeleteCustomFieldSchema, session: AsyncSession):
         service = CustomFieldsService(session)
         res = await service.delete_field(data=data)
+        await session.commit()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
@@ -92,6 +95,7 @@ class CustomFieldsHandler:
     async def upsert_value(data: CreateCustomFieldValueSchema, session: AsyncSession):
         service = CustomFieldsService(session)
         res = await service.upsert_values(data=data)
+        await session.commit()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
