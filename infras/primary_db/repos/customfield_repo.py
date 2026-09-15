@@ -14,7 +14,6 @@ class CustomFieldsRepo:
 
     # --- Custom Fields (Definitions) ---
     
-    @start_db_transaction
     async def create_all_field(self, data: List[CreateCustomFieldDbSchema]) -> bool:
         field_toadd=[CustomerCustomFields(**field.model_dump()) for field in data]
         self.session.add_all(field_toadd)
@@ -22,7 +21,6 @@ class CustomFieldsRepo:
         return True
     
 
-    @start_db_transaction
     async def update_field(self, data:UpdateCustomFieldDbSchema) -> Optional[str]:
         stmt = (
             update(CustomerCustomFields)
@@ -34,7 +32,6 @@ class CustomFieldsRepo:
         await self.session.commit()
         return res
 
-    @start_db_transaction
     async def delete_field(self,data:DeleteCustomFieldDbSchema) -> bool:
         stmt = delete(CustomerCustomFields).where(CustomerCustomFields.id == (data.id if hasattr(data, "id") and data.id else getattr(data, "field_id", None)), CustomerCustomFields.shop_id == data.shop_id)
         res = await self.session.execute(stmt)
@@ -107,7 +104,6 @@ class CustomFieldsRepo:
         return [{c.name: getattr(row, c.name) for c in row.__table__.columns} for row in res]
 
 
-    @start_db_transaction
     async def upsert_field_value(self, data: List[CreateCustomFieldValueDbSchema]) -> bool:
         if not data:
             return True
@@ -129,9 +125,7 @@ class CustomFieldsRepo:
         )
 
         # 4. Execute the batch operation efficiently in one database round-trip
-        conn = await self.session.connection()
-        res = await conn.execute(upsert_stmt, insert_mappings)
-        await self.session.commit()
+        res = await self.session.execute(upsert_stmt, insert_mappings)
         
         ic("Total rows handled (Inserted + Updated) => ", res.rowcount)
         return True

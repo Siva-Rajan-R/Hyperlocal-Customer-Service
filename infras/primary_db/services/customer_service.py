@@ -95,17 +95,18 @@ class CustomerService:
         res=await self.customer_repo_obj.create(data=final_data)
         ic(res)
 
-        cust_obj=await CustomFieldsService(session=self.session).upsert_values(
-            data=CreateCustomFieldValueSchema(
-                shop_id=data.shop_id,
-                customer_id=customer_id,
-                value_infos=[
-                    {'field_id':id,"value":value}
-                    for id,value in data.custom_fields.items()
-                ]
+        if data.custom_fields:
+            cust_obj=await CustomFieldsService(session=self.session).upsert_values(
+                data=CreateCustomFieldValueSchema(
+                    shop_id=data.shop_id,
+                    customer_id=customer_id,
+                    value_infos=[
+                        {'field_id':id,"value":value}
+                        for id,value in data.custom_fields.items()
+                    ]
+                )
             )
-        )
-        ic(cust_obj)
+            ic(cust_obj)
         if res:
             total_credits=data.credit_infos.limit if data.can_have_credit else 0
             total_customers=1
@@ -169,7 +170,7 @@ class CustomerService:
             except Exception as e:
                 ic(f"Failed to publish events: {e}")
 
-
+        await self.session.commit()
         return res
     
 
@@ -182,6 +183,7 @@ class CustomerService:
                     results.append(res)
             except Exception as e:
                 ic(f"Error creating customer in bulk: {e}")
+        await self.session.commit()
         return results
     
 
@@ -227,17 +229,18 @@ class CustomerService:
 
         # For read Db
         if res:
-            cust_obj=await CustomFieldsService(session=self.session).upsert_values(
-                data=CreateCustomFieldValueSchema(
-                        shop_id=data.shop_id,
-                        customer_id=data.id,
-                        value_infos=[
-                            {'field_id':id,"value":value}
-                            for id,value in data.custom_fields.items()
-                        ]
-                    )
-            )
-            ic(cust_obj)
+            if data.custom_fields:
+                cust_obj=await CustomFieldsService(session=self.session).upsert_values(
+                    data=CreateCustomFieldValueSchema(
+                            shop_id=data.shop_id,
+                            customer_id=data.id,
+                            value_infos=[
+                                {'field_id':id,"value":value}
+                                for id,value in data.custom_fields.items()
+                            ]
+                        )
+                )
+                ic(cust_obj)
             try:
                 from messaging.main import RabbitMQMessagingConfig
                 rabbitmq_msg_obj = RabbitMQMessagingConfig()
@@ -259,12 +262,12 @@ class CustomerService:
                     if prev_val != new_val and str(prev_val).strip() != str(new_val).strip():
                         changes.append({
                             "field": key,
-                            "before": str(prev_val) if prev_val is not None else "None",
-                            "after": str(new_val) if new_val is not None else "None"
+                            "old_value": prev_val,
+                            "new_value": new_val
                         })
                 
-                cust_name = cust_get_res.get('name') or getattr(data, 'name', None) or 'Customer'
-                effective_ui_id = cust_get_res.get('ui_id') or getattr(data, 'ui_id', None) or str(data.id)
+                customer_name = res.get('name') or cust_get_res.get('name') or 'Customer'
+                effective_ui_id = res.get('ui_id') or cust_get_res.get('ui_id') or data.id
 
                 await rabbitmq_msg_obj.publish_event(
                     routing_key="activity_logs.routing.key",
@@ -276,8 +279,8 @@ class CustomerService:
                         "action": "UPDATED",
                         "entity_type": "CUSTOMER",
                         "entity_id": str(effective_ui_id),
-                        "entity_name": str(cust_name),
-                        "description": f"Updated Customer {cust_name} ({effective_ui_id})",
+                        "entity_name": str(customer_name),
+                        "description": f"Updated Customer {customer_name} ({effective_ui_id})",
                         "changes": changes
                     },
                     headers={}
@@ -310,6 +313,7 @@ class CustomerService:
                 )
             except Exception as e:
                 ic(f"Failed to publish events: {e}")
+        await self.session.commit()
         return res
     
     async def delete(self,data:DeleteCustomerSchema) -> dict | None:
@@ -417,9 +421,9 @@ class CustomerService:
             except Exception as e:
                 ic(f"Failed to publish analytics event on customer delete: {e}")
 
+        await self.session.commit()
         return res
     
-    @start_db_transaction
     async def add_outstanding(self,data:CreateCustomerOutstandingSchema) -> dict | None:
         cur_outst_amt=data.outstanding_infos.amount
         prev_outst_amt=0.0
@@ -478,25 +482,26 @@ class CustomerService:
                         "notes": data.notes or f"Initial payment for {data.entity_name or 'order'}",
                         "total_amount": float(data.total_amount or 0.0),
                         "paid_amount": float(initial_paid),
-                        "on_credit_amount": float(data.outstanding_infos.amount)
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     }
 
-                    cleared_db_schema = CreateCustomerOutstandingClearedDbSchema(
+                    hist_schema = CreateCustomerOutstandingClearedDbSchema(
+                        id=generate_uuid(),
                         shop_id=data.shop_id,
                         customer_id=data.id,
                         payment_infos=pay_infos_list,
                         cleared_infos=cleared_infos,
                         additional_infos=add_infos
                     )
-                    await self.customer_repo_obj.clear_outstanding(data=cleared_db_schema)
-                    ic("Successfully saved customer outstanding history record")
-                except Exception as ex:
-                    ic("Error saving customer outstanding history record:", ex)
+                    hist_res = await self.customer_repo_obj.clear_outstanding(data=hist_schema)
+                    ic(hist_res)
+                except Exception as e:
+                    ic(f"Failed to record initial payment history: {e}")
 
             total_customers=0
             total_customer_with_credit=0
             total_credits=0
-            total_outstanding=data.outstanding_infos.amount
+            total_outstanding=cur_outst_amt-prev_outst_amt
 
             stats_data=CustomerStatsSchema(
                 total_customers=total_customers,
@@ -536,10 +541,10 @@ class CustomerService:
             except Exception as e:
                 ic(f"Failed to publish analytics event on customer add outstanding: {e}")
 
+        await self.session.commit()
         return res
     
     
-    @start_db_transaction
     async def clear_outstanding(self,data:CreateCustomerOutstandingClearedSchema) -> dict | None:
         outst_clr_id=generate_uuid()
         # STEP-1 CHECKING THE CUSTOMER EXISTANCE FOR GETTTING PREVIOUS VALUES
@@ -569,34 +574,17 @@ class CustomerService:
             outstanding_after=cur_outst_amt
         )
 
-        # Build additional_infos to store notes, entity IDs etc in the ledger record
-        add_infos = {}
-        if data.notes or data.entity_id or data.entity_name or data.invoice_no:
-            effective_inv = data.invoice_no or str(data.entity_id) if data.entity_id else ""
-            add_infos = {
-                "entity_name": data.entity_name or "payment",
-                "entity_id": str(data.entity_id) if data.entity_id else "",
-                "invoice_no": effective_inv,
-                "notes": data.notes or f"Outstanding cleared via {data.entity_name or 'payment'}",
-                "cleared_amount": float(amount_cleared),
-                "outstanding_before": float(prev_outst_amt),
-                "outstanding_after": float(cur_outst_amt),
-            }
+        add_infos = data.additional_infos or {}
+        if not add_infos.get("notes") and getattr(data, 'notes', None):
+            add_infos["notes"] = data.notes
+        if getattr(data, 'invoice_no', None) and not add_infos.get("invoice_no"):
+            add_infos["invoice_no"] = str(data.invoice_no)
 
-        # STEP-3 UPDAING ON THE DB
-        final_data=CreateCustomerOutstandingClearedDbSchema(
-            shop_id=data.shop_id,
-            customer_id=data.id,
-            payment_infos=data.payment_infos,
-            cleared_infos=cleared_infos,
-            additional_infos=add_infos if add_infos else None
-        )
+        final_data=CreateCustomerOutstandingClearedDbSchema(id=outst_clr_id,cleared_infos=cleared_infos,additional_infos=add_infos,**data.model_dump(exclude=['cleared_infos','additional_infos'], exclude_none=True))
         outstanding_infos=CustomerOutstandingInfosType(amount=cur_outst_amt)
-        # STEP-3 (STEP-1) UPDATE THE CUSTOMER OUTSTANDING 
-        upd_db_schema=CreateCustomerOutstandingDbSchema(id=data.id,shop_id=data.shop_id,outstanding_infos=outstanding_infos,type=CustomerOutstandingAddEnums.DIRECT)
-        cust_upd_res=await self.customer_repo_obj.add_outstanding(data=upd_db_schema)
-        ic(cust_upd_res)
-        if not cust_upd_res:
+        cust_update_res=await self.customer_repo_obj.add_outstanding(data=CreateCustomerOutstandingDbSchema(id=data.id,shop_id=data.shop_id,outstanding_infos=outstanding_infos))
+        ic(cust_update_res)
+        if not cust_update_res:
             ic("Error Updating the customer outstanding")
             return False
         # STEP-3 (STEP-2) THEN CREATE THE CLEAR OUTSTANDING
@@ -650,6 +638,7 @@ class CustomerService:
             except Exception as e:
                 ic(f"Failed to publish analytics event on customer clear outstanding: {e}")
             
+        await self.session.commit()
         return outst_clr_res
     
 
