@@ -66,7 +66,7 @@ class CreateCustomerOutstandingClearedSchema(BaseModel):
 # Fetchable Schemas
 class GetAllCustomerSchema(BaseModel):
     query:str=Field(default="",alias="q")
-    limit:int=Field(default=10,le=100)
+    limit:int=Field(default=10,le=1000)
     offset:int=Field(default=1)
     from_date:Optional[str]=None
     to_date:Optional[str]=None
@@ -88,7 +88,7 @@ class GetAllCustomerSchema(BaseModel):
 class GetCustomerByShopIdSchema(BaseModel):
     shop_id:str
     query:str=Field(default="",alias="q")
-    limit:int=Field(default=10,le=100)
+    limit:int=Field(default=10,le=1000)
     offset:int=Field(default=1)
     from_date:Optional[str]=None
     to_date:Optional[str]=None
@@ -115,7 +115,7 @@ class GetCustomerByIdSchema(BaseModel):
 # 
 class GetAllCustomerOutstClearedSchema(BaseModel):
     query:str=Field(default="",alias="q")
-    limit:int=Field(default=10,le=100)
+    limit:int=Field(default=10,le=1000)
     offset:int=Field(default=1)
     from_date:Optional[str]=None
     to_date:Optional[str]=None
@@ -124,7 +124,7 @@ class GetAllCustomerOutstClearedSchema(BaseModel):
 class GetCustomerOutstClearedByShopIdSchema(BaseModel):
     shop_id:str
     query:str=Field(default="",alias="q")
-    limit:int=Field(default=10,le=100)
+    limit:int=Field(default=10,le=1000)
     offset:int=Field(default=1)
     from_date:Optional[str]=None
     to_date:Optional[str]=None
