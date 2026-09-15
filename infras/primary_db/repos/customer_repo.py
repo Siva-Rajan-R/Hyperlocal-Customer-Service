@@ -158,17 +158,15 @@ class CustomerRepo:
                 *self.customer_cleared_his_cols
             )
         )
-
         res=(await self.session.execute(stmt)).mappings().one_or_none()
         return res
 
-    
-
     async def get(self,data:GetAllCustomerSchema) -> List[dict] | list:
-        cursor=(data.offset-1)*data.limit
+        offset_val = data.offset if (data.offset is not None and data.offset > 0) else 1
+        cursor = (offset_val - 1) * data.limit
         conds = []
         if data.query:
-            search_term = f"%{data.query}%"
+            search_term = f"%{data.query.strip()}%"
             conds.append(or_(
                 Customers.id.ilike(search_term),
                 Customers.ui_id.ilike(search_term),
@@ -242,10 +240,12 @@ class CustomerRepo:
     
 
     async def getby_shop_id(self,data:GetCustomerByShopIdSchema) -> List[dict] | list:
-        cursor=(data.offset-1)*data.limit
-        conds = [Customers.shop_id==data.shop_id]
+        offset_val = data.offset if (data.offset is not None and data.offset > 0) else 1
+        cursor = (offset_val - 1) * data.limit
+        shop_id_str = data.shop_id.strip()
+        conds = [or_(Customers.shop_id == shop_id_str, func.lower(Customers.shop_id) == shop_id_str.lower())]
         if data.query:
-            search_term = f"%{data.query}%"
+            search_term = f"%{data.query.strip()}%"
             conds.append(or_(
                 Customers.id.ilike(search_term),
                 Customers.ui_id.ilike(search_term),
@@ -318,13 +318,15 @@ class CustomerRepo:
         return res
     
     async def getby_id(self,data:GetCustomerByIdSchema) -> List[dict] | list:
+        shop_id_str = data.shop_id.strip()
+        id_str = data.id.strip()
         stmt=(
             select(
                 *self.customer_cols
             )
             .where(
-                Customers.shop_id==data.shop_id,
-                Customers.id==data.id
+                or_(Customers.shop_id == shop_id_str, func.lower(Customers.shop_id) == shop_id_str.lower()),
+                or_(Customers.id == id_str, Customers.ui_id == id_str)
             )
         )
 
@@ -333,10 +335,11 @@ class CustomerRepo:
     
 
     async def get_outst_cleared(self,data:GetAllCustomerOutstClearedSchema):
-        cursor=(data.offset-1)*data.limit
+        offset_val = data.offset if (data.offset is not None and data.offset > 0) else 1
+        cursor = (offset_val - 1) * data.limit
         conds = []
         if data.query:
-            search_term = f"%{data.query}%"
+            search_term = f"%{data.query.strip()}%"
             conds.append(or_(
                 CustomerOutstandingClearedHistories.customer_id.ilike(search_term),
                 func.cast(CustomerOutstandingClearedHistories.id, String).ilike(search_term)
@@ -371,10 +374,12 @@ class CustomerRepo:
     
 
     async def get_outst_cleared_by_shop_id(self,data:GetCustomerOutstClearedByShopIdSchema):
-        cursor=(data.offset-1)*data.limit
-        conds = [CustomerOutstandingClearedHistories.shop_id==data.shop_id]
+        offset_val = data.offset if (data.offset is not None and data.offset > 0) else 1
+        cursor = (offset_val - 1) * data.limit
+        shop_id_str = data.shop_id.strip()
+        conds = [or_(CustomerOutstandingClearedHistories.shop_id == shop_id_str, func.lower(CustomerOutstandingClearedHistories.shop_id) == shop_id_str.lower())]
         if data.query:
-            search_term = f"%{data.query}%"
+            search_term = f"%{data.query.strip()}%"
             conds.append(or_(
                 CustomerOutstandingClearedHistories.customer_id.ilike(search_term),
                 func.cast(CustomerOutstandingClearedHistories.id, String).ilike(search_term)
@@ -400,28 +405,25 @@ class CustomerRepo:
                 *self.customer_cleared_his_cols
             )
             .where(and_(*conds))
-            .order_by(CustomerOutstandingClearedHistories.created_at.desc())
-            .offset(offset=cursor).limit(limit=data.limit)
+            .order_by(CustomerOutstandingClearedHistories.created_at.desc()).offset(offset=cursor).limit(limit=data.limit)
         )
 
         res=(await self.session.execute(stmt)).mappings().all()
         return res
     
-
     async def get_outst_cleared_by_id(self,data:GetCustomerOutstClearedByIdSchema):
+        shop_id_str = data.shop_id.strip()
+        id_str = data.id.strip()
         stmt=(
             select(
                 *self.customer_cleared_his_cols
             )
             .where(
-                CustomerOutstandingClearedHistories.shop_id==data.shop_id,
-                CustomerOutstandingClearedHistories.customer_id==data.id
+                or_(CustomerOutstandingClearedHistories.shop_id == shop_id_str, func.lower(CustomerOutstandingClearedHistories.shop_id) == shop_id_str.lower()),
+                or_(CustomerOutstandingClearedHistories.customer_id == id_str, func.cast(CustomerOutstandingClearedHistories.id, String) == id_str)
             )
             .order_by(CustomerOutstandingClearedHistories.created_at.desc(), CustomerOutstandingClearedHistories.id.desc())
         )
 
         res=(await self.session.execute(stmt)).mappings().all()
-
         return res
-
-    
