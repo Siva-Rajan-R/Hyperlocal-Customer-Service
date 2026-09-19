@@ -574,13 +574,27 @@ class CustomerService:
             outstanding_after=cur_outst_amt
         )
 
-        add_infos = data.additional_infos or {}
+        add_infos = getattr(data, 'additional_infos', None) or {}
+        if not isinstance(add_infos, dict):
+            add_infos = {}
+        else:
+            add_infos = dict(add_infos)
         if not add_infos.get("notes") and getattr(data, 'notes', None):
             add_infos["notes"] = data.notes
         if getattr(data, 'invoice_no', None) and not add_infos.get("invoice_no"):
             add_infos["invoice_no"] = str(data.invoice_no)
+        if getattr(data, 'entity_id', None) and not add_infos.get("entity_id"):
+            add_infos["entity_id"] = str(data.entity_id)
+        if getattr(data, 'entity_name', None) and not add_infos.get("entity_name"):
+            add_infos["entity_name"] = str(data.entity_name)
 
-        final_data=CreateCustomerOutstandingClearedDbSchema(id=outst_clr_id,cleared_infos=cleared_infos,additional_infos=add_infos,**data.model_dump(exclude=['cleared_infos','additional_infos'], exclude_none=True))
+        final_data = CreateCustomerOutstandingClearedDbSchema(
+            shop_id=data.shop_id,
+            customer_id=data.id,
+            payment_infos=data.payment_infos,
+            cleared_infos=cleared_infos,
+            additional_infos=add_infos
+        )
         outstanding_infos=CustomerOutstandingInfosType(amount=cur_outst_amt)
         cust_update_res=await self.customer_repo_obj.add_outstanding(data=CreateCustomerOutstandingDbSchema(id=data.id,shop_id=data.shop_id,outstanding_infos=outstanding_infos))
         ic(cust_update_res)

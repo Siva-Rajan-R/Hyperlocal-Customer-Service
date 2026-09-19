@@ -1,5 +1,5 @@
 from pydantic import BaseModel,EmailStr,Field
-from typing import Optional,Dict,List
+from typing import Optional,Dict,List,Union
 from core.data_formats.typ_dicts.customer_typdict import CustomerAddressTypDict
 from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerOutstandingAddEnums,CustomerOutstandingClearedPaymentMethods,PaymentMethodsEnums
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -38,13 +38,14 @@ class CreateCustomerOutstandingDbSchema(BaseModel):
     id:str
     shop_id:str
     outstanding_infos:CustomerOutstandingInfosType
-    type:CustomerOutstandingAddEnums
+    type:Optional[CustomerOutstandingAddEnums]=None
 
 
 
 class CreateCustomerOutstandingClearedDbSchema(BaseModel):
-    shop_id:str
-    customer_id:str
-    payment_infos:List[CustomerPaymentInfosType]
-    cleared_infos:CustomerClearedInfosType
-    additional_infos:Optional[dict]=None
+    id: Optional[Union[int, str]] = None
+    shop_id: str
+    customer_id: str
+    payment_infos: List[CustomerPaymentInfosType]
+    cleared_infos: CustomerClearedInfosType
+    additional_infos: Optional[dict] = None

@@ -147,12 +147,15 @@ class CustomerRepo:
     
 
     async def clear_outstanding(self,data:CreateCustomerOutstandingClearedDbSchema):
+        values_dict = data.model_dump(mode="json", exclude_none=True)
+        if "id" in values_dict and not isinstance(values_dict["id"], int):
+            values_dict.pop("id")
         stmt=(
             insert(
                 CustomerOutstandingClearedHistories
             )
             .values(
-                **data.model_dump(mode="json")
+                **values_dict
             )
             .returning(
                 *self.customer_cleared_his_cols

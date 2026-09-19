@@ -60,6 +60,7 @@ class CreateCustomerOutstandingClearedSchema(BaseModel):
     entity_id: Optional[str] = None
     entity_name: Optional[str] = None
     invoice_no: Optional[str] = None
+    additional_infos: Optional[dict] = None
 
 
 
