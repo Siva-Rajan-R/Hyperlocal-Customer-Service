@@ -588,6 +588,10 @@ class CustomerService:
         if getattr(data, 'entity_name', None) and not add_infos.get("entity_name"):
             add_infos["entity_name"] = str(data.entity_name)
 
+        if not add_infos.get("notes"):
+            entity_ref = add_infos.get("entity_name") or "order"
+            add_infos["notes"] = f"Payment for {entity_ref}"
+
         final_data = CreateCustomerOutstandingClearedDbSchema(
             shop_id=data.shop_id,
             customer_id=data.id,
