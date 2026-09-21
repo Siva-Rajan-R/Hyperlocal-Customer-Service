@@ -20,7 +20,7 @@ async def customer_service_lifespan(app:FastAPI):
         ic("Starting customer service...")
         await init_pg_db()
         await init_read_db()
-        print("[CUSTOMER SERVICE] ✅ Database & Read DB initialized. Ready for background tasks & exports.")
+        print("[CUSTOMER SERVICE] [OK] Database & Read DB initialized. Ready for background tasks & exports.")
         # await CustomerStatsRepo.init_stats()
         app.state.worker_task = asyncio.create_task(worker())
         yield
