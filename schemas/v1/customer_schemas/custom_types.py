@@ -1,5 +1,5 @@
 from pydantic import BaseModel,EmailStr,Field
-from typing import Optional,List,Dict
+from typing import Optional,List,Dict,Union
 from core.data_formats.enums.customer_enums import CustomerPaymentTermsEnums,PaymentMethodsEnums
 from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerOutstandingAddEnums,CustomerOutstandingClearedPaymentMethods,PaymentMethodsEnums
 
@@ -31,8 +31,8 @@ class CustomerOutstandingInfosType(BaseModel):
 
 # Cleared Schemas
 class CustomerPaymentInfosType(BaseModel):
-    method:PaymentMethodsEnums
-    amount:float
+    method: Union[PaymentMethodsEnums, CustomerOutstandingClearedPaymentMethods, str]
+    amount: float
 
 class CustomerClearedInfosType(BaseModel):
     outstanding_before:float

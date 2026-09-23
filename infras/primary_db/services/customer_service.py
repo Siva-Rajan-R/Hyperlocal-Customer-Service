@@ -5,6 +5,7 @@ from schemas.v1.customer_schemas.request_schemas import CreateCustomerSchema,Upd
 from schemas.v1.customer_schemas.db_schemas import CreateCustomerDbSchema,UpdateCustomerDbSchema,DeleteCustomerDbSchema,CreateCustomerOutstandingClearedDbSchema,CreateCustomerOutstandingDbSchema
 from schemas.v1.customer_schemas.custom_types import CustomerOutstandingInfosType,CustomerClearedInfosType,CustomerCreditInfosType,CustomerPaymentInfosType
 import os
+from datetime import datetime, timezone
 from sqlalchemy import select, delete
 from models.service_models.base_service_model import BaseServiceModel
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
@@ -446,10 +447,12 @@ class CustomerService:
         ic(res)
 
         if res:
-            # If initial payment or entity_name/id or history metadata is passed, record history entry!
-            initial_paid = data.cleared_amount if data.cleared_amount is not None else 0.0
-            if not initial_paid and data.payment_infos:
-                initial_paid = sum(p.get("amount", 0.0) if isinstance(p, dict) else getattr(p, "amount", 0.0) for p in data.payment_infos)
+            if data.type == CustomerOutstandingAddEnums.INCREMENT:
+                initial_paid = 0.0
+            else:
+                initial_paid = data.cleared_amount if data.cleared_amount is not None else 0.0
+                if not initial_paid and data.payment_infos:
+                    initial_paid = sum(p.get("amount", 0.0) if isinstance(p, dict) else getattr(p, "amount", 0.0) for p in data.payment_infos if (p.get("mode") or p.get("method") if isinstance(p, dict) else getattr(p, "method", "")) != "ON_CREDIT")
 
             if data.entity_name or data.entity_id or initial_paid > 0 or data.payment_infos or data.total_amount:
                 try:
@@ -458,7 +461,7 @@ class CustomerService:
                         outstanding_after=float(cur_outst_amt)
                     )
                     pay_infos_list = []
-                    valid_methods = {"UPI", "CASH", "CARD", "BANK"}
+                    valid_methods = {"UPI", "CASH", "CARD", "BANK", "RETURN", "EXCHANGE", "ON_CREDIT"}
                     if data.payment_infos:
                         for p in data.payment_infos:
                             m_raw = p.get("mode") or p.get("method") if isinstance(p, dict) else getattr(p, "method", "CASH")
@@ -468,13 +471,19 @@ class CustomerService:
                             amt_val = p.get("amount") if isinstance(p, dict) else getattr(p, "amount", 0.0)
                             pay_infos_list.append(CustomerPaymentInfosType(method=m_str, amount=float(amt_val)))
                     else:
-                        m_raw = getattr(data, "payment_method", "CASH") or "CASH"
-                        m_str = str(m_raw).upper() if m_raw else "CASH"
+                        m_raw = getattr(data, "payment_method", None)
+                        if not m_raw:
+                            if "(on credit)" in str(getattr(data, "notes", "")).lower() or data.type == CustomerOutstandingAddEnums.INCREMENT:
+                                m_raw = "ON_CREDIT"
+                            else:
+                                m_raw = "CASH"
+                        m_str = str(m_raw).upper()
                         if m_str not in valid_methods:
-                            m_str = "CASH"
+                            m_str = "ON_CREDIT" if "(on credit)" in str(getattr(data, "notes", "")).lower() else "CASH"
                         pay_infos_list = [CustomerPaymentInfosType(method=m_str, amount=float(initial_paid))]
 
                     effective_invoice_no = str(data.invoice_no) if getattr(data, 'invoice_no', None) else str(data.entity_id) if data.entity_id else ""
+                    primary_pay_method = pay_infos_list[0].method if pay_infos_list else "ON_CREDIT"
                     add_infos = {
                         "entity_name": data.entity_name or "order",
                         "entity_id": str(data.entity_id) if data.entity_id else "",
@@ -482,6 +491,7 @@ class CustomerService:
                         "notes": data.notes or f"Initial payment for {data.entity_name or 'order'}",
                         "total_amount": float(data.total_amount or 0.0),
                         "paid_amount": float(initial_paid),
+                        "payment_method": primary_pay_method,
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }
 
@@ -560,18 +570,11 @@ class CustomerService:
         for payinfo in data.payment_infos:
             amount_cleared+=payinfo.amount
 
-        if amount_cleared>prev_outst_amt:
-            ic("Outstanding clearing amount should not be grater than the outstanding amount")
-            return False
-        
-        cur_outst_amt=prev_outst_amt-amount_cleared
-        if cur_outst_amt<0:
-            ic("Credit amount should not be goes into negative")
-            return False
+        cur_outst_amt = max(0.0, round(float(prev_outst_amt) - float(amount_cleared), 2))
         
         cleared_infos=CustomerClearedInfosType(
-            outstanding_before=prev_outst_amt,
-            outstanding_after=cur_outst_amt
+            outstanding_before=float(prev_outst_amt),
+            outstanding_after=float(cur_outst_amt)
         )
 
         add_infos = getattr(data, 'additional_infos', None) or {}
@@ -591,6 +594,13 @@ class CustomerService:
         if not add_infos.get("notes"):
             entity_ref = add_infos.get("entity_name") or "order"
             add_infos["notes"] = f"Payment for {entity_ref}"
+
+        add_infos["cleared_amount"] = float(amount_cleared)
+        add_infos["paid_amount"] = float(amount_cleared)
+        add_infos["outstanding_before"] = float(prev_outst_amt)
+        add_infos["outstanding_after"] = float(cur_outst_amt)
+        if "timestamp" not in add_infos:
+            add_infos["timestamp"] = datetime.now(timezone.utc).isoformat()
 
         final_data = CreateCustomerOutstandingClearedDbSchema(
             shop_id=data.shop_id,

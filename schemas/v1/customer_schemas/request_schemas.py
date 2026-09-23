@@ -1,4 +1,4 @@
-from pydantic import BaseModel,EmailStr,Field
+from pydantic import BaseModel,EmailStr,Field,model_validator
 from typing import Optional,Dict,List
 from core.data_formats.typ_dicts.customer_typdict import CustomerAddressTypDict
 from core.data_formats.enums.customer_enums import CustomerCreditHistoryEnums,CustomerOutstandingAddEnums,CustomerOutstandingClearedPaymentMethods,PaymentMethodsEnums
@@ -36,10 +36,11 @@ class DeleteCustomerSchema(BaseModel):
 
 
 class CreateCustomerOutstandingSchema(BaseModel):
-    id:str
-    shop_id:str
-    outstanding_infos:CustomerOutstandingInfosType
-    type:CustomerOutstandingAddEnums
+    id: Optional[str] = None
+    customer_id: Optional[str] = None
+    shop_id: str
+    outstanding_infos: CustomerOutstandingInfosType
+    type: CustomerOutstandingAddEnums
     payment_infos: Optional[List[dict]] = None
     cleared_amount: Optional[float] = None
     total_amount: Optional[float] = None
@@ -48,19 +49,38 @@ class CreateCustomerOutstandingSchema(BaseModel):
     invoice_no: Optional[str] = None
     payment_method: Optional[str] = None
     notes: Optional[str] = None
-    
-    
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_id(cls, data):
+        if isinstance(data, dict):
+            if "customer_id" in data and ("id" not in data or not data["id"]):
+                data["id"] = data["customer_id"]
+            elif "id" in data and ("customer_id" not in data or not data["customer_id"]):
+                data["customer_id"] = data["id"]
+        return data
 
 
 class CreateCustomerOutstandingClearedSchema(BaseModel):
-    shop_id:str
-    id:str
-    payment_infos:List[CustomerPaymentInfosType]
+    shop_id: str
+    id: Optional[str] = None
+    customer_id: Optional[str] = None
+    payment_infos: List[CustomerPaymentInfosType]
     notes: Optional[str] = None
     entity_id: Optional[str] = None
     entity_name: Optional[str] = None
     invoice_no: Optional[str] = None
     additional_infos: Optional[dict] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_id(cls, data):
+        if isinstance(data, dict):
+            if "customer_id" in data and ("id" not in data or not data["id"]):
+                data["id"] = data["customer_id"]
+            elif "id" in data and ("customer_id" not in data or not data["customer_id"]):
+                data["customer_id"] = data["id"]
+        return data
 
 
 

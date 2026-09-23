@@ -91,6 +91,8 @@ class MessagingQueueCustomerService:
         async with AsyncCustomerLocalSession() as session:
             customer_service_obj=CustomerService(session=session)
             if isinstance(data, dict):
+                if "customer_id" in data and "id" not in data:
+                    data["id"] = data["customer_id"]
                 data = CreateCustomerOutstandingClearedSchema(**data)
             res=await customer_service_obj.clear_outstanding(data=data)
             if not res:

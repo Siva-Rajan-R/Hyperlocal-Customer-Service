@@ -20,12 +20,17 @@ class CustomerOutstandingClearedPaymentMethods(str,Enum):
     CARD="CARD"
     BANK="BANK"
     RETURN="RETURN"
+    EXCHANGE="EXCHANGE"
+    ON_CREDIT="ON_CREDIT"
 
 class PaymentMethodsEnums(str,Enum):
     UPI="UPI"
     CASH="CASH"
     CARD="CARD"
     BANK="BANK"
+    RETURN="RETURN"
+    EXCHANGE="EXCHANGE"
+    ON_CREDIT="ON_CREDIT"
 
 class StatsUpdateType(str, Enum):
     INCR = "incr"
