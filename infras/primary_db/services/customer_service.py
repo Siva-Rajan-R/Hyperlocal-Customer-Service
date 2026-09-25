@@ -47,6 +47,133 @@ def extract_display_invoice_no(additional_infos: dict) -> str:
     return inv or entity_id
 
 
+def enrich_clearing_history_with_invoice_outstanding(records: list) -> list:
+    if not records:
+        return records
+
+    def parse_created_time(r):
+        dt = r.get("created_at")
+        if dt:
+            if isinstance(dt, datetime):
+                return dt
+            try:
+                return datetime.fromisoformat(str(dt).replace("Z", "+00:00"))
+            except Exception:
+                pass
+        ts = (r.get("additional_infos") or {}).get("timestamp") if isinstance(r.get("additional_infos"), dict) else None
+        if ts:
+            try:
+                return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            except Exception:
+                pass
+        return datetime.min
+
+    cust_groups = {}
+    for idx, r in enumerate(records):
+        cid = r.get("customer_id") or "default"
+        cust_groups.setdefault(cid, []).append((idx, r))
+
+    enriched_map = {}
+
+    for cid, items in cust_groups.items():
+        sorted_items = sorted(items, key=lambda x: parse_created_time(x[1]))
+        invoice_running_balance = {}
+
+        for orig_idx, r in sorted_items:
+            r_dict = dict(r)
+            add_infos = dict(r_dict.get("additional_infos") or {}) if isinstance(r_dict.get("additional_infos"), dict) else {}
+            cleared_infos = dict(r_dict.get("cleared_infos") or {}) if isinstance(r_dict.get("cleared_infos"), dict) else {}
+
+            inv_key = str(extract_display_invoice_no(add_infos) or add_infos.get("invoice_no") or add_infos.get("entity_id") or r_dict.get("invoice_no") or r_dict.get("entity_id") or "").strip().upper()
+
+            notes = str(add_infos.get("notes") or r_dict.get("notes") or "").lower()
+            is_payment_or_clear = "payment" in notes or "refund" in notes or "return" in notes or "cleared" in notes or r_dict.get("type") in ("DECREMENT", "SALES_RETURN", "REFUND") or bool(add_infos.get("cleared_amount") or add_infos.get("paid_amount"))
+            is_credit_addition = not is_payment_or_clear and (
+                "billed (on credit)" in notes or 
+                "billed on credit" in notes or 
+                "added to credit" in notes or 
+                "(on credit)" in notes or
+                r_dict.get("type") == "INCREMENT" or
+                (add_infos.get("entity_name") == "order" and not is_payment_or_clear)
+            )
+
+            cleared_amount = 0.0
+            if not is_credit_addition:
+                cleared_amount = float(add_infos.get("cleared_amount") or add_infos.get("paid_amount") or 0.0)
+                if not cleared_amount and r_dict.get("payment_infos") and isinstance(r_dict.get("payment_infos"), list):
+                    cleared_amount = sum(float(p.get("amount", 0.0)) for p in r_dict.get("payment_infos") if isinstance(p, dict) and p.get("method") != "ON_CREDIT")
+                if not cleared_amount and ("refund" in notes or "return" in notes):
+                    match = re.search(r"refund amount:\s*([0-9.]+)", notes, re.I)
+                    if match:
+                        cleared_amount = float(match.group(1))
+                if not cleared_amount and ("cleared outstanding:" in notes):
+                    match = re.search(r"cleared outstanding:\s*₹?\s*([0-9.]+)", notes, re.I)
+                    if match:
+                        cleared_amount = float(match.group(1))
+
+            if inv_key:
+                if is_credit_addition:
+                    prev_inv_bal = invoice_running_balance.get(inv_key)
+                    init_amount = float(add_infos.get("invoice_outstanding") or 0.0)
+                    if not init_amount and add_infos.get("total_amount"):
+                        init_amount = max(0.0, float(add_infos.get("total_amount")) - float(add_infos.get("paid_amount") or 0.0))
+                    if not init_amount and r_dict.get("payment_infos"):
+                        for p in r_dict.get("payment_infos"):
+                            if isinstance(p, dict) and p.get("method") == "ON_CREDIT":
+                                init_amount = float(p.get("amount", 0.0))
+                    if not init_amount and cleared_infos.get("outstanding_after") is not None and cleared_infos.get("outstanding_before") is not None:
+                        diff = float(cleared_infos["outstanding_after"]) - float(cleared_infos["outstanding_before"])
+                        if diff > 0:
+                            init_amount = diff
+                    if not init_amount:
+                        init_amount = float(add_infos.get("total_amount") or 0.0)
+
+                    is_increment_on_existing = prev_inv_bal is not None and (
+                        "added to credit" in notes or 
+                        r_dict.get("type") == "INCREMENT" or
+                        (cleared_infos.get("outstanding_after", 0) > cleared_infos.get("outstanding_before", 0) and "exchange" in notes)
+                    )
+
+                    if is_increment_on_existing:
+                        added_amt = float(add_infos.get("total_amount") or 0.0)
+                        if not added_amt and cleared_infos.get("outstanding_after") is not None and cleared_infos.get("outstanding_before") is not None:
+                            added_amt = max(0.0, float(cleared_infos["outstanding_after"]) - float(cleared_infos["outstanding_before"]))
+                        new_inv_bal = round(prev_inv_bal + added_amt, 2)
+                        invoice_running_balance[inv_key] = new_inv_bal
+                        current_inv_outst = new_inv_bal
+                    else:
+                        invoice_running_balance[inv_key] = init_amount
+                        current_inv_outst = init_amount
+                else:
+                    prev_inv_bal = invoice_running_balance.get(inv_key)
+                    if prev_inv_bal is None:
+                        init_amt = float(add_infos.get("invoice_outstanding") or add_infos.get("total_amount") or cleared_amount)
+                        prev_inv_bal = init_amt
+                    new_inv_bal = max(0.0, round(prev_inv_bal - cleared_amount, 2))
+                    invoice_running_balance[inv_key] = new_inv_bal
+                    current_inv_outst = new_inv_bal
+            else:
+                current_inv_outst = float(cleared_infos.get("outstanding_after", 0.0))
+
+            cleared_infos["outstanding_after"] = current_inv_outst
+            add_infos["outstanding_after"] = current_inv_outst
+            add_infos["invoice_outstanding"] = current_inv_outst
+
+            enriched_row = {
+                **r_dict,
+                "outstanding_amount": current_inv_outst,
+                "cleared_infos": cleared_infos,
+                "additional_infos": add_infos,
+                "notes": add_infos.get("notes", ""),
+                "entity_name": add_infos.get("entity_name", ""),
+                "entity_id": add_infos.get("entity_id", ""),
+                "invoice_no": extract_display_invoice_no(add_infos)
+            }
+            enriched_map[orig_idx] = enriched_row
+
+    return [enriched_map[i] for i in range(len(records))]
+
+
 
 
 
@@ -484,6 +611,7 @@ class CustomerService:
 
                     effective_invoice_no = str(data.invoice_no) if getattr(data, 'invoice_no', None) else str(data.entity_id) if data.entity_id else ""
                     primary_pay_method = pay_infos_list[0].method if pay_infos_list else "ON_CREDIT"
+                    order_outst_amount = float(data.outstanding_infos.amount) if (data.outstanding_infos and getattr(data.outstanding_infos, 'amount', None) is not None) else max(0.0, float(data.total_amount or 0.0) - float(initial_paid))
                     add_infos = {
                         "entity_name": data.entity_name or "order",
                         "entity_id": str(data.entity_id) if data.entity_id else "",
@@ -492,6 +620,7 @@ class CustomerService:
                         "total_amount": float(data.total_amount or 0.0),
                         "paid_amount": float(initial_paid),
                         "payment_method": primary_pay_method,
+                        "invoice_outstanding": float(order_outst_amount),
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }
 
@@ -591,9 +720,18 @@ class CustomerService:
         if getattr(data, 'entity_name', None) and not add_infos.get("entity_name"):
             add_infos["entity_name"] = str(data.entity_name)
 
-        if not add_infos.get("notes"):
-            entity_ref = add_infos.get("entity_name") or "order"
-            add_infos["notes"] = f"Payment for {entity_ref}"
+        primary_pay_method = "CASH"
+        if data.payment_infos and len(data.payment_infos) > 0:
+            p0 = data.payment_infos[0]
+            primary_pay_method = p0.method if hasattr(p0, 'method') else (p0.get('method') if isinstance(p0, dict) else "CASH")
+
+        effective_invoice = add_infos.get("invoice_no") or add_infos.get("entity_id") or getattr(data, 'invoice_no', None) or getattr(data, 'entity_id', None) or ""
+
+        if not add_infos.get("notes") or add_infos.get("notes") in ("Payment for order", "Payment for None", "Payment for "):
+            if effective_invoice:
+                add_infos["notes"] = f"Collected ₹{amount_cleared:.2f} via {primary_pay_method} for order {effective_invoice}"
+            else:
+                add_infos["notes"] = f"Collected ₹{amount_cleared:.2f} via {primary_pay_method}"
 
         add_infos["cleared_amount"] = float(amount_cleared)
         add_infos["paid_amount"] = float(amount_cleared)
@@ -690,38 +828,20 @@ class CustomerService:
     async def get_outst_clr(self,data:GetAllCustomerOutstClearedSchema) -> List[dict] | None:
         res=await self.customer_repo_obj.get_outst_cleared(data=data)
         if res:
-            res = [ {
-                **dict(r),
-                "notes": r.get("additional_infos", {}).get("notes", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "entity_name": r.get("additional_infos", {}).get("entity_name", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "entity_id": r.get("additional_infos", {}).get("entity_id", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "invoice_no": extract_display_invoice_no(r.get("additional_infos")) if isinstance(r.get("additional_infos"), dict) else ""
-            } for r in res ]
+            res = enrich_clearing_history_with_invoice_outstanding([dict(r) for r in res])
         ic(res)
         return res
     
     async def get_outst_clr_by_shop_id(self,data:GetCustomerOutstClearedByShopIdSchema) -> List[dict] | None:
         res=await self.customer_repo_obj.get_outst_cleared_by_shop_id(data=data)
         if res:
-            res = [ {
-                **dict(r),
-                "notes": r.get("additional_infos", {}).get("notes", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "entity_name": r.get("additional_infos", {}).get("entity_name", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "entity_id": r.get("additional_infos", {}).get("entity_id", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "invoice_no": extract_display_invoice_no(r.get("additional_infos")) if isinstance(r.get("additional_infos"), dict) else ""
-            } for r in res ]
+            res = enrich_clearing_history_with_invoice_outstanding([dict(r) for r in res])
         ic(res)
         return res
     
     async def get_outst_clr_by_id(self,data:GetCustomerOutstClearedByIdSchema) -> List[dict] | None:
         res=await self.customer_repo_obj.get_outst_cleared_by_id(data=data)
         if res:
-            res = [ {
-                **dict(r),
-                "notes": r.get("additional_infos", {}).get("notes", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "entity_name": r.get("additional_infos", {}).get("entity_name", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "entity_id": r.get("additional_infos", {}).get("entity_id", "") if isinstance(r.get("additional_infos"), dict) else "",
-                "invoice_no": extract_display_invoice_no(r.get("additional_infos")) if isinstance(r.get("additional_infos"), dict) else ""
-            } for r in res ]
+            res = enrich_clearing_history_with_invoice_outstanding([dict(r) for r in res])
         ic(res)
         return res
