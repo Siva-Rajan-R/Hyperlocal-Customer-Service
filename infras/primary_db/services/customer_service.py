@@ -87,14 +87,22 @@ def enrich_clearing_history_with_invoice_outstanding(records: list) -> list:
             inv_key = str(extract_display_invoice_no(add_infos) or add_infos.get("invoice_no") or add_infos.get("entity_id") or r_dict.get("invoice_no") or r_dict.get("entity_id") or "").strip().upper()
 
             notes = str(add_infos.get("notes") or r_dict.get("notes") or "").lower()
-            is_payment_or_clear = "payment" in notes or "refund" in notes or "return" in notes or "cleared" in notes or r_dict.get("type") in ("DECREMENT", "SALES_RETURN", "REFUND") or bool(add_infos.get("cleared_amount") or add_infos.get("paid_amount"))
-            is_credit_addition = not is_payment_or_clear and (
-                "billed (on credit)" in notes or 
-                "billed on credit" in notes or 
-                "added to credit" in notes or 
+            is_initial_order_record = (
+                add_infos.get("is_initial") is True or
+                "initial payment" in notes or
+                "billed (on credit)" in notes or
+                "billed on credit" in notes or
                 "(on credit)" in notes or
                 r_dict.get("type") == "INCREMENT" or
-                (add_infos.get("entity_name") == "order" and not is_payment_or_clear)
+                add_infos.get("type") == "INCREMENT" or
+                (add_infos.get("entity_name") == "order" and not ("collected" in notes or "refund" in notes or "return" in notes))
+            )
+            is_payment_or_clear = not is_initial_order_record and (
+                "payment" in notes or "refund" in notes or "return" in notes or "cleared" in notes or r_dict.get("type") in ("DECREMENT", "SALES_RETURN", "REFUND") or bool(add_infos.get("cleared_amount") or add_infos.get("paid_amount"))
+            )
+            is_credit_addition = is_initial_order_record or (
+                "added to credit" in notes or 
+                r_dict.get("type") == "INCREMENT"
             )
 
             cleared_amount = 0.0
@@ -574,12 +582,13 @@ class CustomerService:
         ic(res)
 
         if res:
-            if data.type == CustomerOutstandingAddEnums.INCREMENT:
-                initial_paid = 0.0
-            else:
-                initial_paid = data.cleared_amount if data.cleared_amount is not None else 0.0
-                if not initial_paid and data.payment_infos:
-                    initial_paid = sum(p.get("amount", 0.0) if isinstance(p, dict) else getattr(p, "amount", 0.0) for p in data.payment_infos if (p.get("mode") or p.get("method") if isinstance(p, dict) else getattr(p, "method", "")) != "ON_CREDIT")
+            initial_paid = data.cleared_amount if data.cleared_amount is not None else 0.0
+            if not initial_paid and data.payment_infos:
+                initial_paid = sum(
+                    (p.get("amount", 0.0) if isinstance(p, dict) else getattr(p, "amount", 0.0))
+                    for p in data.payment_infos
+                    if (p.get("mode") or p.get("method") if isinstance(p, dict) else getattr(p, "method", "")) != "ON_CREDIT"
+                )
 
             if data.entity_name or data.entity_id or initial_paid > 0 or data.payment_infos or data.total_amount:
                 try:
@@ -621,6 +630,8 @@ class CustomerService:
                         "paid_amount": float(initial_paid),
                         "payment_method": primary_pay_method,
                         "invoice_outstanding": float(order_outst_amount),
+                        "is_initial": True,
+                        "type": data.type.value if hasattr(data.type, 'value') else str(data.type),
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }
 

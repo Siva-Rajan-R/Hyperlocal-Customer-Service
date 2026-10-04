@@ -49,6 +49,7 @@ class CreateCustomerOutstandingSchema(BaseModel):
     invoice_no: Optional[str] = None
     payment_method: Optional[str] = None
     notes: Optional[str] = None
+    is_initial: Optional[bool] = None
 
     @model_validator(mode="before")
     @classmethod
