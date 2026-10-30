@@ -357,6 +357,53 @@ class CustomerService:
 
 
 
+        customer_uuid = str(cust_get_res.get("id") or data.id)
+
+        # Fetch existing custom field values before update
+        old_cf_dict = {}
+        id_to_name = {}
+        field_types = {}
+        try:
+            from infras.primary_db.repos.customfield_repo import CustomFieldsRepo
+            from schemas.v1.db_schemas.customfield_schema import GetFieldByShopIdSchema, GetvaluesByCustomerId
+            defined_fields = await CustomFieldsRepo(session=self.session).get_fields_by_shop_id(
+                data=GetFieldByShopIdSchema(shop_id=data.shop_id)
+            )
+            for f in (defined_fields or []):
+                if isinstance(f, dict):
+                    fid = str(f.get("id", "")).strip()
+                    fname = str(f.get("field_name", "")).strip()
+                    flbl = str(f.get("label_name") or f.get("field_name") or fid).strip()
+                    ftype = str(f.get("type", "")).strip().lower()
+                    if fid:
+                        id_to_name[fid] = flbl
+                        id_to_name[fid.lower()] = flbl
+                        field_types[fid] = ftype
+                        field_types[fid.lower()] = ftype
+                    if fname:
+                        id_to_name[fname] = flbl
+                        id_to_name[fname.lower()] = flbl
+                        field_types[fname] = ftype
+                        field_types[fname.lower()] = ftype
+                    id_to_name[flbl] = flbl
+                    id_to_name[flbl.lower()] = flbl
+
+            old_cf_raw = await CustomFieldsRepo(session=self.session).get_values_by_customer_id(
+                data=GetvaluesByCustomerId(id=data.id, shop_id=data.shop_id),
+                customer_uuid=customer_uuid
+            )
+            for item in (old_cf_raw or []):
+                fid = str(item.get("field_id", "")).strip()
+                val = item.get("value")
+                label = id_to_name.get(fid) or id_to_name.get(fid.lower()) or fid
+                ft = field_types.get(fid) or field_types.get(fid.lower())
+                if ft in ("bool", "boolean") or str(val).lower() in ("true", "false"):
+                    if str(val).lower() == "true": val = "Yes"
+                    elif str(val).lower() == "false": val = "No"
+                old_cf_dict[label] = val
+        except Exception as e:
+            ic(f"Error fetching existing custom fields for customer: {e}")
+
         final_data=UpdateCustomerDbSchema(credit_infos=credit_infos,**data.model_dump(exclude=['credit_infos']))
 
         res=await self.customer_repo_obj.update(data=final_data)
@@ -381,29 +428,114 @@ class CustomerService:
                 from messaging.main import RabbitMQMessagingConfig
                 rabbitmq_msg_obj = RabbitMQMessagingConfig()
                 
-                # Build exact changes diff using exclude_unset=True, exclude_none=True
                 def _is_empty_or_none(val):
                     if val is None: return True
                     if isinstance(val, (dict, list, set, str, tuple)) and len(val) == 0: return True
                     return str(val).strip() in ("None", "{}", "[]", "", "null", "NoneType")
 
-                dumped_updates = data.model_dump(exclude_unset=True, exclude_none=True)
                 changes = []
-                for key, new_val in dumped_updates.items():
-                    if key in ["id", "shop_id", "user_id", "cur_user_id"]:
-                        continue
-                    prev_val = cust_get_res.get(key)
-                    if _is_empty_or_none(prev_val) and _is_empty_or_none(new_val):
-                        continue
-                    if prev_val != new_val and str(prev_val).strip() != str(new_val).strip():
+
+                # 1. Name change
+                prev_name = cust_get_res.get("name")
+                if data.name is not None and not _is_empty_or_none(data.name) and prev_name != data.name:
+                    changes.append({
+                        "field": "name",
+                        "before": str(prev_name) if prev_name else "None",
+                        "after": str(data.name)
+                    })
+
+                # 2. Contact Infos (Email & Mobile Number)
+                prev_contact = cust_get_res.get("contact_infos") or {}
+                if isinstance(prev_contact, dict) and data.contact_infos:
+                    new_email = data.contact_infos.email
+                    prev_email = prev_contact.get("email")
+                    if new_email is not None and str(new_email).strip().lower() != str(prev_email or "").strip().lower():
                         changes.append({
-                            "field": key,
-                            "old_value": prev_val,
-                            "new_value": new_val
+                            "field": "email",
+                            "before": str(prev_email) if prev_email else "None",
+                            "after": str(new_email)
                         })
+
+                    new_phone = data.contact_infos.mobile_number
+                    prev_phone = prev_contact.get("mobile_number")
+                    if new_phone is not None and str(new_phone).strip() != str(prev_phone or "").strip():
+                        changes.append({
+                            "field": "mobile number",
+                            "before": str(prev_phone) if prev_phone else "None",
+                            "after": str(new_phone)
+                        })
+
+                # 3. Credit Infos (Limit, Terms, Notes)
+                prev_credit = cust_get_res.get("credit_infos") or {}
+                prev_limit = float(prev_credit.get("limit", 0.0)) if isinstance(prev_credit, dict) and prev_credit.get("limit") is not None else 0.0
+                new_limit = float(credit_infos.limit) if hasattr(credit_infos, 'limit') and credit_infos.limit is not None else 0.0
+                if abs(prev_limit - new_limit) > 0.0001:
+                    changes.append({
+                        "field": "credit limit",
+                        "before": str(int(prev_limit) if prev_limit.is_integer() else prev_limit),
+                        "after": str(int(new_limit) if new_limit.is_integer() else new_limit)
+                    })
+
+                prev_terms = prev_credit.get("terms") if isinstance(prev_credit, dict) else None
+                new_terms = credit_infos.terms if hasattr(credit_infos, 'terms') else None
+                if new_terms is not None and str(prev_terms or "").strip() != str(new_terms or "").strip():
+                    changes.append({
+                        "field": "credit terms",
+                        "before": str(prev_terms) if prev_terms else "None",
+                        "after": str(new_terms)
+                    })
+
+                # 4. Can Have Credit
+                prev_can_credit = cust_get_res.get("can_have_credit")
+                if data.can_have_credit is not None and bool(prev_can_credit) != bool(data.can_have_credit):
+                    changes.append({
+                        "field": "can have credit",
+                        "before": "Yes" if prev_can_credit else "No",
+                        "after": "Yes" if data.can_have_credit else "No"
+                    })
+
+                # 5. Location Infos
+                prev_loc = cust_get_res.get("location_infos") or {}
+                if isinstance(prev_loc, dict) and data.location_infos:
+                    for loc_k, loc_label in [("full_address", "address"), ("zipcode", "zipcode"), ("state", "state"), ("country", "country")]:
+                        prev_loc_val = prev_loc.get(loc_k)
+                        new_loc_val = getattr(data.location_infos, loc_k, None)
+                        if new_loc_val is not None and str(prev_loc_val or "").strip().lower() != str(new_loc_val or "").strip().lower():
+                            changes.append({
+                                "field": loc_label,
+                                "before": str(prev_loc_val) if prev_loc_val else "None",
+                                "after": str(new_loc_val)
+                            })
+
+                # 6. Custom Fields
+                if data.custom_fields:
+                    new_cf_dict = {}
+                    if isinstance(data.custom_fields, dict):
+                        for fid_or_name, val in data.custom_fields.items():
+                            k_str = str(fid_or_name).strip()
+                            label = id_to_name.get(k_str) or id_to_name.get(k_str.lower()) or k_str
+                            ft = field_types.get(k_str) or field_types.get(k_str.lower())
+                            if ft in ("bool", "boolean") or str(val).lower() in ("true", "false"):
+                                if str(val).lower() == "true": val = "Yes"
+                                elif str(val).lower() == "false": val = "No"
+                            new_cf_dict[label] = val
+                    all_cf_keys = set(old_cf_dict.keys()) | set(new_cf_dict.keys())
+                    for cf_k in all_cf_keys:
+                        cf_prev = old_cf_dict.get(cf_k)
+                        cf_new = new_cf_dict.get(cf_k)
+                        if _is_empty_or_none(cf_prev) and _is_empty_or_none(cf_new):
+                            continue
+                        if str(cf_prev).strip() != str(cf_new).strip():
+                            changes.append({
+                                "field": cf_k,
+                                "before": str(cf_prev) if cf_prev is not None else "None",
+                                "after": str(cf_new) if cf_new is not None else "None"
+                            })
                 
                 customer_name = res.get('name') or cust_get_res.get('name') or 'Customer'
                 effective_ui_id = res.get('ui_id') or cust_get_res.get('ui_id') or data.id
+
+                desc = f"Updated {', '.join(c['field'] for c in changes)}" if changes else f"Updated Customer {customer_name} ({effective_ui_id})"
 
                 await rabbitmq_msg_obj.publish_event(
                     routing_key="activity_logs.routing.key",
@@ -416,7 +548,7 @@ class CustomerService:
                         "entity_type": "CUSTOMER",
                         "entity_id": str(effective_ui_id),
                         "entity_name": str(customer_name),
-                        "description": f"Updated Customer {customer_name} ({effective_ui_id})",
+                        "description": desc,
                         "changes": changes
                     },
                     headers={}
@@ -424,7 +556,7 @@ class CustomerService:
 
                 # Send delta analytics event
                 old_credit_limit = cust_get_res.get('credit_infos', {}).get('limit', 0.0) if cust_get_res.get('credit_infos') else 0.0
-                new_credit_limit = limit
+                new_credit_limit = credit_infos.limit if hasattr(credit_infos, 'limit') else 0.0
                 delta_credit_limit = new_credit_limit - old_credit_limit
                 
                 analytics_payload = {

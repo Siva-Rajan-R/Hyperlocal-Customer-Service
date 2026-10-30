@@ -127,13 +127,16 @@ class CustomFieldsRepo:
         # 4. Execute the batch operation efficiently in one database round-trip
         res = await self.session.execute(upsert_stmt, insert_mappings)
         
-        ic("Total rows handled (Inserted + Updated) => ", res.rowcount)
+        # ic("Total rows handled (Inserted + Updated) => ", res.rowcount)
         return True
 
         
-    async def get_values_by_customer_id(self, data:GetvaluesByCustomerId) -> List[dict]:
+    async def get_values_by_customer_id(self, data:GetvaluesByCustomerId, customer_uuid: Optional[str] = None) -> List[dict]:
+        ids_to_check = {str(data.id)}
+        if customer_uuid:
+            ids_to_check.add(str(customer_uuid))
         stmt = select(CustomerCustomFieldsValues).where(
-            CustomerCustomFieldsValues.customer_id == data.id,
+            CustomerCustomFieldsValues.customer_id.in_(list(ids_to_check)),
             CustomerCustomFieldsValues.shop_id == data.shop_id
         )
         res = (await self.session.execute(stmt)).scalars().all()
