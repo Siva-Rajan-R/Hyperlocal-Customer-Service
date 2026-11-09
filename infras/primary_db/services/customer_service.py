@@ -122,19 +122,26 @@ def enrich_clearing_history_with_invoice_outstanding(records: list) -> list:
             if inv_key:
                 if is_credit_addition:
                     prev_inv_bal = invoice_running_balance.get(inv_key)
-                    init_amount = float(add_infos.get("invoice_outstanding") or 0.0)
-                    if not init_amount and add_infos.get("total_amount"):
-                        init_amount = max(0.0, float(add_infos.get("total_amount")) - float(add_infos.get("paid_amount") or 0.0))
-                    if not init_amount and r_dict.get("payment_infos"):
-                        for p in r_dict.get("payment_infos"):
-                            if isinstance(p, dict) and p.get("method") == "ON_CREDIT":
-                                init_amount = float(p.get("amount", 0.0))
-                    if not init_amount and cleared_infos.get("outstanding_after") is not None and cleared_infos.get("outstanding_before") is not None:
-                        diff = float(cleared_infos["outstanding_after"]) - float(cleared_infos["outstanding_before"])
-                        if diff > 0:
-                            init_amount = diff
-                    if not init_amount:
-                        init_amount = float(add_infos.get("total_amount") or 0.0)
+                    raw_inv_outst = add_infos.get("invoice_outstanding")
+                    if raw_inv_outst is not None:
+                        init_amount = float(raw_inv_outst)
+                    else:
+                        paid_upfront = float(add_infos.get("paid_amount") or add_infos.get("cleared_amount") or 0.0)
+                        if not paid_upfront and r_dict.get("payment_infos"):
+                            paid_upfront = sum(float(p.get("amount", 0.0)) for p in r_dict.get("payment_infos") if isinstance(p, dict) and str(p.get("method") or p.get("mode")).upper() not in ("ON_CREDIT", "ON CREDIT"))
+                        tot_amt = float(add_infos.get("total_amount") or 0.0)
+                        if tot_amt > 0:
+                            init_amount = max(0.0, tot_amt - paid_upfront)
+                        elif r_dict.get("payment_infos"):
+                            init_amount = 0.0
+                            for p in r_dict.get("payment_infos"):
+                                if isinstance(p, dict) and str(p.get("method") or p.get("mode")).upper() in ("ON_CREDIT", "ON CREDIT"):
+                                    init_amount += float(p.get("amount", 0.0))
+                        elif cleared_infos.get("outstanding_after") is not None and cleared_infos.get("outstanding_before") is not None:
+                            diff = float(cleared_infos["outstanding_after"]) - float(cleared_infos["outstanding_before"])
+                            init_amount = max(0.0, diff) if diff > 0 else 0.0
+                        else:
+                            init_amount = 0.0
 
                     is_increment_on_existing = prev_inv_bal is not None and (
                         "added to credit" in notes or 
@@ -627,11 +634,13 @@ class CustomerService:
         res=await self.customer_repo_obj.delete(data=final_data)
         ic(res)
 
-        if res:
-            total_credits=-res['credit_infos']['limit']
+        deleted_row = res[0] if isinstance(res, list) and res else res
+
+        if deleted_row:
+            total_credits=-deleted_row['credit_infos']['limit'] if deleted_row.get('credit_infos') and isinstance(deleted_row['credit_infos'], dict) else 0
             total_customers=-1
-            total_customer_with_credit=-1 if res['can_have_credit'] else 0
-            total_outstanding=-res['outstanding_infos']['amount'] if res['outstanding_infos'] else 0
+            total_customer_with_credit=-1 if deleted_row.get('can_have_credit') else 0
+            total_outstanding=-deleted_row['outstanding_infos']['amount'] if deleted_row.get('outstanding_infos') and isinstance(deleted_row['outstanding_infos'], dict) else 0
 
             stats_data=CustomerStatsSchema(
                 total_customers=total_customers,
@@ -642,8 +651,8 @@ class CustomerService:
 
             await self.customer_stats_repo_obj.update_stats(data=stats_data,type=StatsUpdateType.INCR)
             
-            customer_name = res.get('name', 'Customer')
-            effective_ui_id = res.get('ui_id', data.id)
+            customer_name = deleted_row.get('name', 'Customer') if isinstance(deleted_row, dict) else 'Customer'
+            effective_ui_id = deleted_row.get('ui_id', data.id) if isinstance(deleted_row, dict) else data.id
 
             try:
                 from messaging.main import RabbitMQMessagingConfig
