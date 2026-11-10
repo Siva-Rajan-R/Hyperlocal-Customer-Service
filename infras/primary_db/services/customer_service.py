@@ -711,11 +711,19 @@ class CustomerService:
                 ic("The given customer doesn't exists")
                 return False
             ic(cust_get_res)
-            prev_outst_amt=cust_get_res.get('outstanding_infos').get("amount",0) if cust_get_res.get('outstanding_infos') else 0
-            cur_outst_amt=prev_outst_amt+data.outstanding_infos.amount if data.type==CustomerOutstandingAddEnums.INCREMENT else prev_outst_amt-data.outstanding_infos.amount
-            if cur_outst_amt<0:
-                ic("Credit amount should not be goes into negative")
-                return False
+            prev_outst_amt=float(cust_get_res.get('outstanding_infos', {}).get("amount",0) if cust_get_res.get('outstanding_infos') else 0)
+            if data.type == CustomerOutstandingAddEnums.INCREMENT:
+                cur_outst_amt = prev_outst_amt + float(data.outstanding_infos.amount)
+            else:
+                pay_amt = float(data.outstanding_infos.amount)
+                if pay_amt <= 0:
+                    raise HTTPException(status_code=400, detail="Payment amount must be greater than 0")
+                if pay_amt > prev_outst_amt + 0.01:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Payment amount (₹{pay_amt:,.2f}) cannot exceed customer outstanding balance (₹{prev_outst_amt:,.2f})"
+                    )
+                cur_outst_amt = max(0.0, prev_outst_amt - pay_amt)
         outstanding_infos=CustomerOutstandingInfosType(amount=cur_outst_amt)
         exclude_fields = ['outstanding_infos', 'payment_infos', 'cleared_amount', 'total_amount', 'entity_name', 'entity_id', 'payment_method', 'notes']
         final_data=CreateCustomerOutstandingDbSchema(outstanding_infos=outstanding_infos,**data.model_dump(exclude=exclude_fields, exclude_none=True))
@@ -845,11 +853,20 @@ class CustomerService:
             return False
         
         # STEP-2 GETTING THE CLEARED AMOUNT AND CREATING THE BEFORE AND AFTER OUTSTANDING INFO
-        prev_outst_amt=cust_get_res.get('outstanding_infos').get("amount",0) if cust_get_res.get('outstanding_infos') else 0
-        amount_cleared=0
+        prev_outst_amt = float(cust_get_res.get('outstanding_infos', {}).get("amount", 0) if cust_get_res.get('outstanding_infos') else 0)
+        amount_cleared = 0.0
 
         for payinfo in data.payment_infos:
-            amount_cleared+=payinfo.amount
+            amount_cleared += float(payinfo.amount)
+
+        if amount_cleared <= 0:
+            raise HTTPException(status_code=400, detail="Payment amount must be greater than 0")
+
+        if amount_cleared > prev_outst_amt + 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payment amount (₹{amount_cleared:,.2f}) cannot exceed customer outstanding balance (₹{prev_outst_amt:,.2f})"
+            )
 
         cur_outst_amt = max(0.0, round(float(prev_outst_amt) - float(amount_cleared), 2))
         
