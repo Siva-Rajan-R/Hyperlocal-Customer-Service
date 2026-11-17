@@ -315,6 +315,118 @@ class CustomerService:
 
         await self.session.commit()
         return res
+
+    async def bulk_delete(self, shop_id: str, ids: List[str]) -> dict:
+        deleted_ids = []
+        failed_items = []
+        ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://127.0.0.1:8007")
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for cid in ids:
+                try:
+                    cust_get_res = await self.get_customer_by_id(data=GetCustomerByIdSchema(id=cid, shop_id=shop_id))
+                    if not cust_get_res:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cid,
+                            "reason": "Customer not found"
+                        })
+                        continue
+
+                    cname = cust_get_res.get("name", cid)
+
+                    # Check outstanding balance
+                    outst_infos = cust_get_res.get("outstanding_infos") or {}
+                    outst_amount = float(outst_infos.get("amount", 0.0) or 0.0)
+                    if outst_amount > 0:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cname,
+                            "reason": f"Customer has an outstanding balance of ₹{outst_amount}. Outstanding balance must be cleared before deletion."
+                        })
+                        continue
+
+                    # Check orders
+                    try:
+                        res_orders = await client.get(f"{ORDER_SERVICE_URL}/orders/by/customer/{shop_id}/{cid}?limit=1")
+                        if res_orders.status_code == 200:
+                            orders_data = res_orders.json()
+                            orders_list = orders_data.get("data", [])
+                            if (isinstance(orders_list, list) and len(orders_list) > 0) or (isinstance(orders_list, dict) and len(orders_list.get("datas") or []) > 0):
+                                failed_items.append({
+                                    "id": cid,
+                                    "name": cname,
+                                    "reason": "Sales/orders are associated with this customer."
+                                })
+                                continue
+                    except Exception as e:
+                        ic(f"Error checking orders for customer {cid}: {e}")
+
+                    # Clean up custom field values
+                    try:
+                        from ..models.customfield_model import CustomerCustomFieldsValues
+                        await self.session.execute(delete(CustomerCustomFieldsValues).where(CustomerCustomFieldsValues.customer_id == cid, CustomerCustomFieldsValues.shop_id == shop_id))
+                    except Exception as e:
+                        ic(f"Error cleaning up customer custom fields values: {e}")
+
+                    final_data = DeleteCustomerDbSchema(id=cid, shop_id=shop_id)
+                    res = await self.customer_repo_obj.delete(data=final_data)
+                    deleted_row = res[0] if isinstance(res, list) and res else res
+                    if deleted_row:
+                        total_credits = -deleted_row['credit_infos']['limit'] if deleted_row.get('credit_infos') and isinstance(deleted_row['credit_infos'], dict) else 0
+                        total_customers = -1
+                        total_customer_with_credit = -1 if deleted_row.get('can_have_credit') else 0
+                        total_outstanding = -deleted_row['outstanding_infos']['amount'] if deleted_row.get('outstanding_infos') and isinstance(deleted_row['outstanding_infos'], dict) else 0
+
+                        stats_data = CustomerStatsSchema(
+                            total_customers=total_customers,
+                            total_customer_with_credit=total_customer_with_credit,
+                            total_credits=total_credits,
+                            total_outstanding=total_outstanding
+                        )
+                        await self.customer_stats_repo_obj.update_stats(data=stats_data, type=StatsUpdateType.INCR)
+
+                    deleted_ids.append(cid)
+
+                except Exception as e:
+                    failed_items.append({
+                        "id": cid,
+                        "name": cid,
+                        "reason": str(e)
+                    })
+
+        try:
+            await self.session.commit()
+        except Exception as e:
+            ic(f"Error committing bulk delete session: {e}")
+
+        # Emit SINGLE summary notification
+        if deleted_ids or failed_items:
+            try:
+                from helpers.emit_notification import emit_notification
+                if not failed_items:
+                    msg = f"Successfully deleted {len(deleted_ids)} customer(s)."
+                    ntype = "info"
+                else:
+                    msg = f"Deleted {len(deleted_ids)} customer(s). {len(failed_items)} customer(s) could not be deleted (has outstanding or active orders)."
+                    ntype = "warning"
+
+                asyncio.create_task(emit_notification(
+                    title="Bulk Customer Deletion",
+                    message=msg,
+                    type=ntype,
+                    user_id=shop_id
+                ))
+            except Exception as notification_error:
+                ic(f"Notification error in bulk delete: {notification_error}")
+
+        return {
+            "total": len(ids),
+            "deleted_count": len(deleted_ids),
+            "failed_count": len(failed_items),
+            "deleted_ids": deleted_ids,
+            "failed_items": failed_items,
+        }
     
 
     async def create_bulk(self, data: List[CreateCustomerSchema]) -> List[dict]:
@@ -327,7 +439,119 @@ class CustomerService:
             except Exception as e:
                 ic(f"Error creating customer in bulk: {e}")
         await self.session.commit()
-        return results
+        return res
+
+    async def bulk_delete(self, shop_id: str, ids: List[str]) -> dict:
+        deleted_ids = []
+        failed_items = []
+        ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://127.0.0.1:8007")
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for cid in ids:
+                try:
+                    cust_get_res = await self.get_customer_by_id(data=GetCustomerByIdSchema(id=cid, shop_id=shop_id))
+                    if not cust_get_res:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cid,
+                            "reason": "Customer not found"
+                        })
+                        continue
+
+                    cname = cust_get_res.get("name", cid)
+
+                    # Check outstanding balance
+                    outst_infos = cust_get_res.get("outstanding_infos") or {}
+                    outst_amount = float(outst_infos.get("amount", 0.0) or 0.0)
+                    if outst_amount > 0:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cname,
+                            "reason": f"Customer has an outstanding balance of ₹{outst_amount}. Outstanding balance must be cleared before deletion."
+                        })
+                        continue
+
+                    # Check orders
+                    try:
+                        res_orders = await client.get(f"{ORDER_SERVICE_URL}/orders/by/customer/{shop_id}/{cid}?limit=1")
+                        if res_orders.status_code == 200:
+                            orders_data = res_orders.json()
+                            orders_list = orders_data.get("data", [])
+                            if (isinstance(orders_list, list) and len(orders_list) > 0) or (isinstance(orders_list, dict) and len(orders_list.get("datas") or []) > 0):
+                                failed_items.append({
+                                    "id": cid,
+                                    "name": cname,
+                                    "reason": "Sales/orders are associated with this customer."
+                                })
+                                continue
+                    except Exception as e:
+                        ic(f"Error checking orders for customer {cid}: {e}")
+
+                    # Clean up custom field values
+                    try:
+                        from ..models.customfield_model import CustomerCustomFieldsValues
+                        await self.session.execute(delete(CustomerCustomFieldsValues).where(CustomerCustomFieldsValues.customer_id == cid, CustomerCustomFieldsValues.shop_id == shop_id))
+                    except Exception as e:
+                        ic(f"Error cleaning up customer custom fields values: {e}")
+
+                    final_data = DeleteCustomerDbSchema(id=cid, shop_id=shop_id)
+                    res = await self.customer_repo_obj.delete(data=final_data)
+                    deleted_row = res[0] if isinstance(res, list) and res else res
+                    if deleted_row:
+                        total_credits = -deleted_row['credit_infos']['limit'] if deleted_row.get('credit_infos') and isinstance(deleted_row['credit_infos'], dict) else 0
+                        total_customers = -1
+                        total_customer_with_credit = -1 if deleted_row.get('can_have_credit') else 0
+                        total_outstanding = -deleted_row['outstanding_infos']['amount'] if deleted_row.get('outstanding_infos') and isinstance(deleted_row['outstanding_infos'], dict) else 0
+
+                        stats_data = CustomerStatsSchema(
+                            total_customers=total_customers,
+                            total_customer_with_credit=total_customer_with_credit,
+                            total_credits=total_credits,
+                            total_outstanding=total_outstanding
+                        )
+                        await self.customer_stats_repo_obj.update_stats(data=stats_data, type=StatsUpdateType.INCR)
+
+                    deleted_ids.append(cid)
+
+                except Exception as e:
+                    failed_items.append({
+                        "id": cid,
+                        "name": cid,
+                        "reason": str(e)
+                    })
+
+        try:
+            await self.session.commit()
+        except Exception as e:
+            ic(f"Error committing bulk delete session: {e}")
+
+        # Emit SINGLE summary notification
+        if deleted_ids or failed_items:
+            try:
+                from helpers.emit_notification import emit_notification
+                if not failed_items:
+                    msg = f"Successfully deleted {len(deleted_ids)} customer(s)."
+                    ntype = "info"
+                else:
+                    msg = f"Deleted {len(deleted_ids)} customer(s). {len(failed_items)} customer(s) could not be deleted (has outstanding or active orders)."
+                    ntype = "warning"
+
+                asyncio.create_task(emit_notification(
+                    title="Bulk Customer Deletion",
+                    message=msg,
+                    type=ntype,
+                    user_id=shop_id
+                ))
+            except Exception as notification_error:
+                ic(f"Notification error in bulk delete: {notification_error}")
+
+        return {
+            "total": len(ids),
+            "deleted_count": len(deleted_ids),
+            "failed_count": len(failed_items),
+            "deleted_ids": deleted_ids,
+            "failed_items": failed_items,
+        }
     
 
     async def update(self,data:UpdateCustomerSchema) -> dict | None:
@@ -590,6 +814,118 @@ class CustomerService:
                 ic(f"Failed to publish events: {e}")
         await self.session.commit()
         return res
+
+    async def bulk_delete(self, shop_id: str, ids: List[str]) -> dict:
+        deleted_ids = []
+        failed_items = []
+        ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://127.0.0.1:8007")
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for cid in ids:
+                try:
+                    cust_get_res = await self.get_customer_by_id(data=GetCustomerByIdSchema(id=cid, shop_id=shop_id))
+                    if not cust_get_res:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cid,
+                            "reason": "Customer not found"
+                        })
+                        continue
+
+                    cname = cust_get_res.get("name", cid)
+
+                    # Check outstanding balance
+                    outst_infos = cust_get_res.get("outstanding_infos") or {}
+                    outst_amount = float(outst_infos.get("amount", 0.0) or 0.0)
+                    if outst_amount > 0:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cname,
+                            "reason": f"Customer has an outstanding balance of ₹{outst_amount}. Outstanding balance must be cleared before deletion."
+                        })
+                        continue
+
+                    # Check orders
+                    try:
+                        res_orders = await client.get(f"{ORDER_SERVICE_URL}/orders/by/customer/{shop_id}/{cid}?limit=1")
+                        if res_orders.status_code == 200:
+                            orders_data = res_orders.json()
+                            orders_list = orders_data.get("data", [])
+                            if (isinstance(orders_list, list) and len(orders_list) > 0) or (isinstance(orders_list, dict) and len(orders_list.get("datas") or []) > 0):
+                                failed_items.append({
+                                    "id": cid,
+                                    "name": cname,
+                                    "reason": "Sales/orders are associated with this customer."
+                                })
+                                continue
+                    except Exception as e:
+                        ic(f"Error checking orders for customer {cid}: {e}")
+
+                    # Clean up custom field values
+                    try:
+                        from ..models.customfield_model import CustomerCustomFieldsValues
+                        await self.session.execute(delete(CustomerCustomFieldsValues).where(CustomerCustomFieldsValues.customer_id == cid, CustomerCustomFieldsValues.shop_id == shop_id))
+                    except Exception as e:
+                        ic(f"Error cleaning up customer custom fields values: {e}")
+
+                    final_data = DeleteCustomerDbSchema(id=cid, shop_id=shop_id)
+                    res = await self.customer_repo_obj.delete(data=final_data)
+                    deleted_row = res[0] if isinstance(res, list) and res else res
+                    if deleted_row:
+                        total_credits = -deleted_row['credit_infos']['limit'] if deleted_row.get('credit_infos') and isinstance(deleted_row['credit_infos'], dict) else 0
+                        total_customers = -1
+                        total_customer_with_credit = -1 if deleted_row.get('can_have_credit') else 0
+                        total_outstanding = -deleted_row['outstanding_infos']['amount'] if deleted_row.get('outstanding_infos') and isinstance(deleted_row['outstanding_infos'], dict) else 0
+
+                        stats_data = CustomerStatsSchema(
+                            total_customers=total_customers,
+                            total_customer_with_credit=total_customer_with_credit,
+                            total_credits=total_credits,
+                            total_outstanding=total_outstanding
+                        )
+                        await self.customer_stats_repo_obj.update_stats(data=stats_data, type=StatsUpdateType.INCR)
+
+                    deleted_ids.append(cid)
+
+                except Exception as e:
+                    failed_items.append({
+                        "id": cid,
+                        "name": cid,
+                        "reason": str(e)
+                    })
+
+        try:
+            await self.session.commit()
+        except Exception as e:
+            ic(f"Error committing bulk delete session: {e}")
+
+        # Emit SINGLE summary notification
+        if deleted_ids or failed_items:
+            try:
+                from helpers.emit_notification import emit_notification
+                if not failed_items:
+                    msg = f"Successfully deleted {len(deleted_ids)} customer(s)."
+                    ntype = "info"
+                else:
+                    msg = f"Deleted {len(deleted_ids)} customer(s). {len(failed_items)} customer(s) could not be deleted (has outstanding or active orders)."
+                    ntype = "warning"
+
+                asyncio.create_task(emit_notification(
+                    title="Bulk Customer Deletion",
+                    message=msg,
+                    type=ntype,
+                    user_id=shop_id
+                ))
+            except Exception as notification_error:
+                ic(f"Notification error in bulk delete: {notification_error}")
+
+        return {
+            "total": len(ids),
+            "deleted_count": len(deleted_ids),
+            "failed_count": len(failed_items),
+            "deleted_ids": deleted_ids,
+            "failed_items": failed_items,
+        }
     
     async def delete(self,data:DeleteCustomerSchema) -> dict | None:
         # 1. Fetch customer to validate
@@ -700,6 +1036,227 @@ class CustomerService:
 
         await self.session.commit()
         return res
+
+    async def bulk_delete(self, shop_id: str, ids: List[str]) -> dict:
+        deleted_ids = []
+        failed_items = []
+        ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://127.0.0.1:8007")
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for cid in ids:
+                try:
+                    cust_get_res = await self.get_customer_by_id(data=GetCustomerByIdSchema(id=cid, shop_id=shop_id))
+                    if not cust_get_res:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cid,
+                            "reason": "Customer not found"
+                        })
+                        continue
+
+                    cname = cust_get_res.get("name", cid)
+
+                    outst_infos = cust_get_res.get("outstanding_infos") or {}
+                    outst_amount = float(outst_infos.get("amount", 0.0) or 0.0)
+                    if outst_amount > 0:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cname,
+                            "reason": f"Customer has an outstanding balance of ₹{outst_amount}. Outstanding balance must be cleared before deletion."
+                        })
+                        continue
+
+                    try:
+                        res_orders = await client.get(f"{ORDER_SERVICE_URL}/orders/by/customer/{shop_id}/{cid}?limit=1")
+                        if res_orders.status_code == 200:
+                            orders_data = res_orders.json()
+                            orders_list = orders_data.get("data", [])
+                            if (isinstance(orders_list, list) and len(orders_list) > 0) or (isinstance(orders_list, dict) and len(orders_list.get("datas") or []) > 0):
+                                failed_items.append({
+                                    "id": cid,
+                                    "name": cname,
+                                    "reason": "Sales/orders are associated with this customer."
+                                })
+                                continue
+                    except Exception as e:
+                        ic(f"Error checking orders for customer {cid}: {e}")
+
+                    try:
+                        from ..models.customfield_model import CustomerCustomFieldsValues
+                        await self.session.execute(delete(CustomerCustomFieldsValues).where(CustomerCustomFieldsValues.customer_id == cid, CustomerCustomFieldsValues.shop_id == shop_id))
+                    except Exception as e:
+                        ic(f"Error cleaning up customer custom fields values: {e}")
+
+                    final_data = DeleteCustomerDbSchema(id=cid, shop_id=shop_id)
+                    res = await self.customer_repo_obj.delete(data=final_data)
+                    deleted_row = res[0] if isinstance(res, list) and res else res
+                    if deleted_row:
+                        total_credits = -deleted_row['credit_infos']['limit'] if deleted_row.get('credit_infos') and isinstance(deleted_row['credit_infos'], dict) else 0
+                        total_customers = -1
+                        total_customer_with_credit = -1 if deleted_row.get('can_have_credit') else 0
+                        total_outstanding = -deleted_row['outstanding_infos']['amount'] if deleted_row.get('outstanding_infos') and isinstance(deleted_row['outstanding_infos'], dict) else 0
+
+                        stats_data = CustomerStatsSchema(
+                            total_customers=total_customers,
+                            total_customer_with_credit=total_customer_with_credit,
+                            total_credits=total_credits,
+                            total_outstanding=total_outstanding
+                        )
+                        await self.customer_stats_repo_obj.update_stats(data=stats_data, type=StatsUpdateType.INCR)
+
+                    deleted_ids.append(cid)
+
+                except Exception as e:
+                    failed_items.append({
+                        "id": cid,
+                        "name": cid,
+                        "reason": str(e)
+                    })
+
+        try:
+            await self.session.commit()
+        except Exception as e:
+            ic(f"Error committing bulk delete session: {e}")
+
+        if deleted_ids or failed_items:
+            try:
+                from helpers.emit_notification import emit_notification
+                if not failed_items:
+                    msg = f"Successfully deleted {len(deleted_ids)} customer(s)."
+                    ntype = "info"
+                else:
+                    msg = f"Deleted {len(deleted_ids)} customer(s). {len(failed_items)} customer(s) could not be deleted (has outstanding or active orders)."
+                    ntype = "warning"
+
+                asyncio.create_task(emit_notification(
+                    title="Bulk Customer Deletion",
+                    message=msg,
+                    type=ntype,
+                    user_id=shop_id
+                ))
+            except Exception as notification_error:
+                ic(f"Notification error in bulk delete: {notification_error}")
+
+        return {
+            "total": len(ids),
+            "deleted_count": len(deleted_ids),
+            "failed_count": len(failed_items),
+            "deleted_ids": deleted_ids,
+            "failed_items": failed_items,
+        }
+
+
+    async def bulk_delete(self, shop_id: str, ids: List[str]) -> dict:
+        deleted_ids = []
+        failed_items = []
+        ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://127.0.0.1:8007")
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for cid in ids:
+                try:
+                    cust_get_res = await self.get_customer_by_id(data=GetCustomerByIdSchema(id=cid, shop_id=shop_id))
+                    if not cust_get_res:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cid,
+                            "reason": "Customer not found"
+                        })
+                        continue
+
+                    cname = cust_get_res.get("name", cid)
+
+                    # Check outstanding balance
+                    outst_infos = cust_get_res.get("outstanding_infos") or {}
+                    outst_amount = float(outst_infos.get("amount", 0.0) or 0.0)
+                    if outst_amount > 0:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cname,
+                            "reason": f"Customer has an outstanding balance of ₹{outst_amount}. Outstanding balance must be cleared before deletion."
+                        })
+                        continue
+
+                    # Check orders
+                    try:
+                        res_orders = await client.get(f"{ORDER_SERVICE_URL}/orders/by/customer/{shop_id}/{cid}?limit=1")
+                        if res_orders.status_code == 200:
+                            orders_data = res_orders.json()
+                            orders_list = orders_data.get("data", [])
+                            if (isinstance(orders_list, list) and len(orders_list) > 0) or (isinstance(orders_list, dict) and len(orders_list.get("datas") or []) > 0):
+                                failed_items.append({
+                                    "id": cid,
+                                    "name": cname,
+                                    "reason": "Sales/orders are associated with this customer."
+                                })
+                                continue
+                    except Exception as e:
+                        ic(f"Error checking orders for customer {cid}: {e}")
+
+                    # Clean up custom field values
+                    try:
+                        from ..models.customfield_model import CustomerCustomFieldsValues
+                        await self.session.execute(delete(CustomerCustomFieldsValues).where(CustomerCustomFieldsValues.customer_id == cid, CustomerCustomFieldsValues.shop_id == shop_id))
+                    except Exception as e:
+                        ic(f"Error cleaning up customer custom fields values: {e}")
+
+                    final_data = DeleteCustomerDbSchema(id=cid, shop_id=shop_id)
+                    res = await self.customer_repo_obj.delete(data=final_data)
+                    deleted_row = res[0] if isinstance(res, list) and res else res
+                    if deleted_row:
+                        total_credits = -deleted_row['credit_infos']['limit'] if deleted_row.get('credit_infos') and isinstance(deleted_row['credit_infos'], dict) else 0
+                        total_customers = -1
+                        total_customer_with_credit = -1 if deleted_row.get('can_have_credit') else 0
+                        total_outstanding = -deleted_row['outstanding_infos']['amount'] if deleted_row.get('outstanding_infos') and isinstance(deleted_row['outstanding_infos'], dict) else 0
+
+                        stats_data = CustomerStatsSchema(
+                            total_customers=total_customers,
+                            total_customer_with_credit=total_customer_with_credit,
+                            total_credits=total_credits,
+                            total_outstanding=total_outstanding
+                        )
+                        await self.customer_stats_repo_obj.update_stats(data=stats_data, type=StatsUpdateType.INCR)
+
+                    deleted_ids.append(cid)
+
+                except Exception as e:
+                    failed_items.append({
+                        "id": cid,
+                        "name": cid,
+                        "reason": str(e)
+                    })
+
+        try:
+            await self.session.commit()
+        except Exception as e:
+            ic(f"Error committing bulk delete session: {e}")
+
+        # Emit SINGLE summary notification
+        if deleted_ids or failed_items:
+            try:
+                from helpers.emit_notification import emit_notification
+                if not failed_items:
+                    msg = f"Successfully deleted {len(deleted_ids)} customer(s)."
+                    ntype = "info"
+                else:
+                    msg = f"Deleted {len(deleted_ids)} customer(s). {len(failed_items)} customer(s) could not be deleted (has outstanding or active orders)."
+                    ntype = "warning"
+
+                asyncio.create_task(emit_notification(
+                    title="Bulk Customer Deletion",
+                    message=msg,
+                    type=ntype,
+                    user_id=shop_id
+                ))
+            except Exception as notification_error:
+                ic(f"Notification error in bulk delete: {notification_error}")
+
+        return {
+            "total": len(ids),
+            "deleted_count": len(deleted_ids),
+            "failed_count": len(failed_items),
+            "deleted_ids": deleted_ids,
+            "failed_items": failed_items,
+        }
     
     async def add_outstanding(self,data:CreateCustomerOutstandingSchema) -> dict | None:
         cur_outst_amt=data.outstanding_infos.amount
@@ -842,6 +1399,118 @@ class CustomerService:
 
         await self.session.commit()
         return res
+
+    async def bulk_delete(self, shop_id: str, ids: List[str]) -> dict:
+        deleted_ids = []
+        failed_items = []
+        ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://127.0.0.1:8007")
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for cid in ids:
+                try:
+                    cust_get_res = await self.get_customer_by_id(data=GetCustomerByIdSchema(id=cid, shop_id=shop_id))
+                    if not cust_get_res:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cid,
+                            "reason": "Customer not found"
+                        })
+                        continue
+
+                    cname = cust_get_res.get("name", cid)
+
+                    # Check outstanding balance
+                    outst_infos = cust_get_res.get("outstanding_infos") or {}
+                    outst_amount = float(outst_infos.get("amount", 0.0) or 0.0)
+                    if outst_amount > 0:
+                        failed_items.append({
+                            "id": cid,
+                            "name": cname,
+                            "reason": f"Customer has an outstanding balance of ₹{outst_amount}. Outstanding balance must be cleared before deletion."
+                        })
+                        continue
+
+                    # Check orders
+                    try:
+                        res_orders = await client.get(f"{ORDER_SERVICE_URL}/orders/by/customer/{shop_id}/{cid}?limit=1")
+                        if res_orders.status_code == 200:
+                            orders_data = res_orders.json()
+                            orders_list = orders_data.get("data", [])
+                            if (isinstance(orders_list, list) and len(orders_list) > 0) or (isinstance(orders_list, dict) and len(orders_list.get("datas") or []) > 0):
+                                failed_items.append({
+                                    "id": cid,
+                                    "name": cname,
+                                    "reason": "Sales/orders are associated with this customer."
+                                })
+                                continue
+                    except Exception as e:
+                        ic(f"Error checking orders for customer {cid}: {e}")
+
+                    # Clean up custom field values
+                    try:
+                        from ..models.customfield_model import CustomerCustomFieldsValues
+                        await self.session.execute(delete(CustomerCustomFieldsValues).where(CustomerCustomFieldsValues.customer_id == cid, CustomerCustomFieldsValues.shop_id == shop_id))
+                    except Exception as e:
+                        ic(f"Error cleaning up customer custom fields values: {e}")
+
+                    final_data = DeleteCustomerDbSchema(id=cid, shop_id=shop_id)
+                    res = await self.customer_repo_obj.delete(data=final_data)
+                    deleted_row = res[0] if isinstance(res, list) and res else res
+                    if deleted_row:
+                        total_credits = -deleted_row['credit_infos']['limit'] if deleted_row.get('credit_infos') and isinstance(deleted_row['credit_infos'], dict) else 0
+                        total_customers = -1
+                        total_customer_with_credit = -1 if deleted_row.get('can_have_credit') else 0
+                        total_outstanding = -deleted_row['outstanding_infos']['amount'] if deleted_row.get('outstanding_infos') and isinstance(deleted_row['outstanding_infos'], dict) else 0
+
+                        stats_data = CustomerStatsSchema(
+                            total_customers=total_customers,
+                            total_customer_with_credit=total_customer_with_credit,
+                            total_credits=total_credits,
+                            total_outstanding=total_outstanding
+                        )
+                        await self.customer_stats_repo_obj.update_stats(data=stats_data, type=StatsUpdateType.INCR)
+
+                    deleted_ids.append(cid)
+
+                except Exception as e:
+                    failed_items.append({
+                        "id": cid,
+                        "name": cid,
+                        "reason": str(e)
+                    })
+
+        try:
+            await self.session.commit()
+        except Exception as e:
+            ic(f"Error committing bulk delete session: {e}")
+
+        # Emit SINGLE summary notification
+        if deleted_ids or failed_items:
+            try:
+                from helpers.emit_notification import emit_notification
+                if not failed_items:
+                    msg = f"Successfully deleted {len(deleted_ids)} customer(s)."
+                    ntype = "info"
+                else:
+                    msg = f"Deleted {len(deleted_ids)} customer(s). {len(failed_items)} customer(s) could not be deleted (has outstanding or active orders)."
+                    ntype = "warning"
+
+                asyncio.create_task(emit_notification(
+                    title="Bulk Customer Deletion",
+                    message=msg,
+                    type=ntype,
+                    user_id=shop_id
+                ))
+            except Exception as notification_error:
+                ic(f"Notification error in bulk delete: {notification_error}")
+
+        return {
+            "total": len(ids),
+            "deleted_count": len(deleted_ids),
+            "failed_count": len(failed_items),
+            "deleted_ids": deleted_ids,
+            "failed_items": failed_items,
+        }
     
     
     async def clear_outstanding(self,data:CreateCustomerOutstandingClearedSchema) -> dict | None:

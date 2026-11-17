@@ -31,9 +31,26 @@ async def create_bulk(data:List[CreateCustomerSchema],session:PG_ASYNC_SESSION):
 async def update(data:UpdateCustomerSchema,session:PG_ASYNC_SESSION):
     return await HandleCustomerRequest(session=session).update(data=data)
 
+from pydantic import BaseModel
+class BulkDeleteCustomerSchema(BaseModel):
+    ids: List[str]
+
 @router.delete('/{shop_id}/{id}')
 async def delete(session:PG_ASYNC_SESSION,data:DeleteCustomerSchema=Depends()):
     return await HandleCustomerRequest(session=session).delete(data=data)
+
+@router.post('/{shop_id}/bulk-delete')
+async def bulk_delete_customers_shop(shop_id: str, data: BulkDeleteCustomerSchema, session: PG_ASYNC_SESSION):
+    return await HandleCustomerRequest(session=session).bulk_delete(shop_id=shop_id, ids=data.ids)
+
+@router.delete('/{shop_id}/bulk')
+async def bulk_delete_customers_shop_delete(shop_id: str, data: BulkDeleteCustomerSchema, session: PG_ASYNC_SESSION):
+    return await HandleCustomerRequest(session=session).bulk_delete(shop_id=shop_id, ids=data.ids)
+
+@router.post('/bulk-delete')
+async def bulk_delete_customers(data: BulkDeleteCustomerSchema, session: PG_ASYNC_SESSION, shop_id: Optional[str] = None):
+    target_shop = shop_id or SHOP_ID
+    return await HandleCustomerRequest(session=session).bulk_delete(shop_id=target_shop, ids=data.ids)
 
 @router.post('/outstanding/add')
 async def add_outstanding(session:PG_ASYNC_SESSION,data:CreateCustomerOutstandingSchema):

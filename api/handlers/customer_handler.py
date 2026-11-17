@@ -190,6 +190,31 @@ class HandleCustomerRequest:
                 )
             )
     
+    async def bulk_delete(self, shop_id: str, ids: List[str]):
+        try:
+            res = await CustomerService(session=self.session).bulk_delete(shop_id=shop_id, ids=ids)
+            await self.session.commit()
+            return SuccessResponseTypDict(
+                detail=BaseResponseTypDict(
+                    msg=f"Bulk delete completed. {res.get('deleted_count', 0)} deleted, {res.get('failed_count', 0)} failed.",
+                    status_code=200,
+                    success=True
+                ),
+                data=res
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponseTypDict(
+                    msg="Error : Bulk deleting customers",
+                    description=str(e),
+                    status_code=400,
+                    success=False
+                )
+            )
+    
 
     async def add_outstanding(self,data:CreateCustomerOutstandingSchema) -> dict | None:
         if data.type=="DECREMENT":
